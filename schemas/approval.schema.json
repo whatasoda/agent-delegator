@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "approvedBy",
+    "approvedAt",
+    "briefSha256",
+    "briefMarkdownSha256",
+    "evidenceBundleSha256",
+    "evidenceMarkdownSha256",
+    "allowUnresolved"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "enum": [2, 3] },
+    "approvedBy": { "type": "string", "minLength": 1 },
+    "approvedAt": { "type": "string", "format": "date-time" },
+    "briefSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "briefMarkdownSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "evidenceBundleSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "evidenceMarkdownSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "allowUnresolved": { "type": "boolean" },
+    "repoRoot": { "type": "string", "minLength": 1 },
+    "baseCommit": { "type": "string", "minLength": 1 },
+    "worktreeSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "schemaVersion": { "const": 3 } } },
+      "then": { "required": ["repoRoot", "baseCommit", "worktreeSha256"] },
+      "else": {
+        "not": {
+          "anyOf": [
+            { "required": ["repoRoot"] },
+            { "required": ["baseCommit"] },
+            { "required": ["worktreeSha256"] }
+          ]
+        }
+      }
+    }
+  ]
+}

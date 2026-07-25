@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "evaluator", "outcome", "brief_quality", "implementation_quality", "communication_quality", "verification", "ratings", "issue_categories", "notes", "tags", "recorded_at", "automated"],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "evaluator": { "type": "string", "minLength": 1 },
+    "outcome": { "type": "string", "enum": ["accepted-as-is", "accepted-with-changes", "rejected", "abandoned"] },
+    "brief_quality": { "type": "string", "enum": ["accurate", "minor-edits", "major-edits", "unusable"] },
+    "implementation_quality": { "type": "string", "enum": ["accepted-as-is", "minor-fixes", "major-fixes", "rejected", "not-completed"] },
+    "communication_quality": { "type": "string", "enum": ["efficient", "acceptable", "excessive", "insufficient"] },
+    "verification": { "type": "string", "enum": ["passed", "partial", "failed", "not-run"] },
+    "ratings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirements_fidelity", "implementation_quality", "communication_efficiency"],
+      "properties": {
+        "requirements_fidelity": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "implementation_quality": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "communication_efficiency": { "type": "integer", "minimum": 1, "maximum": 5 }
+      }
+    },
+    "issue_categories": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "enum": ["source-coverage", "extraction", "citation", "brief-ambiguity", "implementation", "verification", "tooling", "performance", "model", "other"] }
+    },
+    "notes": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "recorded_at": { "type": "string", "format": "date-time" },
+    "automated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_status", "compiler_attempts", "implementation_attempts", "resume_attempts", "brief_changed_by_claude", "brief_json_difference_count", "implementation_changed_after_codex", "final_worktree_fingerprint", "final_checkpoint_path"],
+      "properties": {
+        "run_status": { "type": "string", "minLength": 1 },
+        "compiler_attempts": { "type": "integer", "minimum": 0 },
+        "implementation_attempts": { "type": "integer", "minimum": 0 },
+        "resume_attempts": { "type": "integer", "minimum": 0 },
+        "brief_changed_by_claude": { "type": ["boolean", "null"] },
+        "brief_json_difference_count": { "type": ["integer", "null"], "minimum": 0 },
+        "implementation_changed_after_codex": { "type": ["boolean", "null"] },
+        "final_worktree_fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "final_checkpoint_path": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

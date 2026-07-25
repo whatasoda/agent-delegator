@@ -1,0 +1,18 @@
+{
+  "$schema": "../schemas/evaluation-input.schema.json",
+  "schema_version": "1",
+  "evaluator": "claude",
+  "outcome": "accepted-with-changes",
+  "brief_quality": "minor-edits",
+  "implementation_quality": "minor-fixes",
+  "communication_quality": "efficient",
+  "verification": "passed",
+  "ratings": {
+    "requirements_fidelity": 4,
+    "implementation_quality": 4,
+    "communication_efficiency": 5
+  },
+  "issue_categories": [],
+  "notes": "Record what Claude changed and why.",
+  "tags": []
+}

@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "runId", "status", "objective", "repoRoot", "baseCommit",
+    "transcriptPath", "transcriptSessionId", "transcriptResolutionMethod",
+    "createdAt", "updatedAt", "compilerModel", "compilerSessionId",
+    "implementationModel", "implementationSessionId", "latestResult", "failure"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["collecting", "prepared", "compiling", "compiled", "approved", "implementing", "completed", "needs-decision", "blocked", "failed"]
+    },
+    "objective": { "type": "string", "minLength": 1 },
+    "repoRoot": { "type": "string", "minLength": 1 },
+    "baseCommit": { "type": "string", "minLength": 1 },
+    "transcriptPath": { "type": "string" },
+    "transcriptSessionId": { "type": ["string", "null"] },
+    "transcriptResolutionMethod": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "compilerModel": { "type": ["string", "null"] },
+    "compilerSessionId": { "type": ["string", "null"] },
+    "implementationModel": { "type": ["string", "null"] },
+    "implementationSessionId": { "type": ["string", "null"] },
+    "latestResult": { "type": ["string", "null"] },
+    "failure": { "type": ["string", "null"] },
+    "failurePhase": { "type": ["string", "null"], "enum": ["collect", "compile", "implement", "resume", null] },
+    "activeOperation": { "type": ["string", "null"], "enum": ["collect", "compile", "implement", "resume", null] },
+    "controllerPid": { "type": ["integer", "null"], "minimum": 1 },
+    "attempts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["collect", "compile", "implement", "resume"],
+      "properties": {
+        "collect": { "type": "integer", "minimum": 0 },
+        "compile": { "type": "integer", "minimum": 0 },
+        "implement": { "type": "integer", "minimum": 0 },
+        "resume": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "approvedWorktreeSha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "lastWorktreeSha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "contextRequestPath": { "type": ["string", "null"] },
+    "evidenceBundlePath": { "type": ["string", "null"] },
+    "evidenceBundleSha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "projectProfilePath": { "type": ["string", "null"] },
+    "taskMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_type", "complexity", "tags"],
+      "properties": {
+        "task_type": {
+          "type": "string",
+          "enum": ["feature", "bugfix", "refactor", "test", "documentation", "tooling", "migration", "performance", "security", "investigation", "other"]
+        },
+        "complexity": { "type": "string", "enum": ["small", "medium", "large", "unknown"] },
+        "tags": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "approvalCount": { "type": "integer", "minimum": 0 },
+    "evaluationCount": { "type": "integer", "minimum": 0 },
+    "latestCheckpointPath": { "type": ["string", "null"] },
+    "observationVersion": { "const": 1 },
+    "delegatorVersion": { "type": "string", "minLength": 1 },
+    "delegatorRevision": { "type": ["string", "null"] },
+    "delegatorDirty": { "type": ["boolean", "null"] }
+  }
+}

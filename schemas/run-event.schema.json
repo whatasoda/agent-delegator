@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "at", "stage", "event", "attempt", "duration_ms", "model", "run_status", "failure_category", "message", "usage", "metrics", "artifacts"],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "id": { "type": "string", "minLength": 1 },
+    "at": { "type": "string", "format": "date-time" },
+    "stage": { "type": "string", "enum": ["collect", "compile", "approve", "implement", "resume", "evaluate", "status"] },
+    "event": { "type": "string", "enum": ["started", "completed", "failed", "recovered"] },
+    "attempt": { "type": ["integer", "null"], "minimum": 1 },
+    "duration_ms": { "type": ["integer", "null"], "minimum": 0 },
+    "model": { "type": ["string", "null"] },
+    "run_status": { "type": "string" },
+    "failure_category": {
+      "type": ["string", "null"],
+      "enum": ["configuration", "collection", "validation", "integrity", "repository-drift", "codex-spawn", "codex-timeout", "codex-exit", "interrupted", "unknown", null]
+    },
+    "message": { "type": ["string", "null"] },
+    "usage": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["input_tokens", "cached_input_tokens", "output_tokens"],
+          "properties": {
+            "input_tokens": { "type": "integer", "minimum": 0 },
+            "cached_input_tokens": { "type": "integer", "minimum": 0 },
+            "output_tokens": { "type": "integer", "minimum": 0 }
+          }
+        }
+      ]
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source_count": { "type": "integer", "minimum": 0 },
+        "source_bytes": { "type": "integer", "minimum": 0 },
+        "excluded_source_count": { "type": "integer", "minimum": 0 },
+        "unresolved_item_count": { "type": "integer", "minimum": 0 },
+        "citation_count": { "type": "integer", "minimum": 0 },
+        "changed_file_count": { "type": "integer", "minimum": 0 },
+        "patch_bytes": { "type": "integer", "minimum": 0 },
+        "codex_invoked": { "type": "boolean" },
+        "exit_code": { "type": "integer" }
+      }
+    },
+    "artifacts": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+  }
+}

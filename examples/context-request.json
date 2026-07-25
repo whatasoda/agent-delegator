@@ -1,0 +1,37 @@
+{
+  "$schema": "../schemas/context-request.schema.json",
+  "schema_version": "1",
+  "objective": "Implement the already-decided API change",
+  "metadata": {
+    "task_type": "feature",
+    "complexity": "medium",
+    "tags": ["api", "trial"]
+  },
+  "project_profile": "agent-delegator.project.json",
+  "profile_topics": ["backend"],
+  "transcripts": [
+    {
+      "kind": "transcript",
+      "current": true,
+      "from_turn": 20,
+      "to_turn": 48,
+      "role": "decision",
+      "required": true,
+      "selected_because": "The turns where requirements and constraints were settled"
+    }
+  ],
+  "sources": [
+    {
+      "kind": "file",
+      "path": "docs/spec/messaging.md",
+      "role": "specification",
+      "required": true,
+      "selected_because": "Behavioral contract for the changed endpoint"
+    }
+  ],
+  "limits": {
+    "max_files": 30,
+    "max_source_bytes": 524288,
+    "max_total_bytes": 5242880
+  }
+}

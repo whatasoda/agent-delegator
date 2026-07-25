@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "context-request.schema.json",
+  "$defs": {
+    "role": {
+      "type": "string",
+      "enum": ["policy", "specification", "decision", "context", "implementation", "diagnostic", "external"]
+    },
+    "base": {
+      "type": "object",
+      "properties": {
+        "role": { "$ref": "#/$defs/role" },
+        "required": { "type": "boolean" },
+        "selected_because": { "type": "string", "minLength": 1 }
+      }
+    },
+    "transcript": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "const": "transcript" },
+            "path": { "type": "string", "minLength": 1 },
+            "session_id": { "type": "string", "minLength": 1 },
+            "current": { "const": true },
+            "from_turn": { "type": "integer", "minimum": 1 },
+            "to_turn": { "type": "integer", "minimum": 1 },
+            "role": { "$ref": "#/$defs/role" },
+            "required": { "type": "boolean" },
+            "selected_because": { "type": "string" }
+          },
+          "oneOf": [
+            { "required": ["path"] },
+            { "required": ["session_id"] },
+            { "required": ["current"] }
+          ]
+        }
+      ]
+    },
+    "file": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "path"],
+          "properties": {
+            "kind": { "const": "file" },
+            "path": { "type": "string", "minLength": 1 },
+            "role": { "$ref": "#/$defs/role" },
+            "required": { "type": "boolean" },
+            "selected_because": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "glob": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "pattern"],
+          "properties": {
+            "kind": { "const": "glob" },
+            "pattern": { "type": "string", "minLength": 1 },
+            "role": { "$ref": "#/$defs/role" },
+            "required": { "type": "boolean" },
+            "selected_because": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "repo_source": { "oneOf": [{ "$ref": "#/$defs/file" }, { "$ref": "#/$defs/glob" }] }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "objective", "transcripts", "sources", "profile_topics"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema_version": { "const": "1" },
+    "objective": { "type": "string", "minLength": 1 },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_type", "complexity", "tags"],
+      "properties": {
+        "task_type": {
+          "type": "string",
+          "enum": ["feature", "bugfix", "refactor", "test", "documentation", "tooling", "migration", "performance", "security", "investigation", "other"]
+        },
+        "complexity": { "type": "string", "enum": ["small", "medium", "large", "unknown"] },
+        "tags": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "project_profile": { "type": ["string", "null"] },
+    "profile_topics": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "transcripts": { "type": "array", "items": { "$ref": "#/$defs/transcript" } },
+    "sources": { "type": "array", "items": { "$ref": "#/$defs/repo_source" } },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_files": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "max_source_bytes": { "type": "integer", "minimum": 1 },
+        "max_total_bytes": { "type": "integer", "minimum": 1 },
+        "max_transcript_input_bytes": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}
