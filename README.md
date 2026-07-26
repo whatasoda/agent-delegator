@@ -199,6 +199,13 @@ stdin content; this is a harmless Codex diagnostic. Event streams may also conta
 agent messages. The schema-constrained object in `--output-last-message` is the canonical result,
 and the complete event stream remains diagnostic evidence.
 
+Some Codex CLI releases may also repeatedly log a `codex_models_manager` cache error mentioning a
+missing `supports_reasoning_summaries` field. It was observed with Codex CLI 0.144.5 without an
+execution failure. Treat it as known version-specific noise only when the Codex process still emits
+normal events and a valid result; otherwise retain and investigate it with the rest of `stderr.log`.
+The delegator deliberately does not filter this line, because a similar future error may accompany a
+real model-discovery failure.
+
 ## Observation workflow
 
 Observation is designed for trial operation, not only incident debugging. A run records its input

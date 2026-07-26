@@ -239,6 +239,20 @@ bun "$AGENT_DELEGATOR_CLI" compile \
   --runs-dir="$AGENT_DELEGATOR_RUNS_ROOT"
 ```
 
+If compilation fails, inspect the failed attempt's `output.json`, `stderr.log`, validation message,
+and any `citation-turn-corrections.json`. Keep the same reviewed Evidence Bundle and retry explicitly:
+
+```sh
+bun "$AGENT_DELEGATOR_CLI" compile \
+  --run=<target-id>-portability-<date> \
+  --runs-dir="$AGENT_DELEGATOR_RUNS_ROOT" \
+  --retry
+```
+
+Do not start a new run merely to bypass the failed state. Start over only when the selected evidence,
+repository anchor, or objective must change; record that replacement rather than comparing it as the
+same run.
+
 Review `brief.generated.json`, `brief.json`, and `brief.md` against the target transcript, Evidence
 Bundle, and target guidance. If present, also review
 `attempts/compile/NNN/citation-turn-corrections.json` against the preserved raw `output.json`.
