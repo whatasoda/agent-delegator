@@ -60,7 +60,10 @@ Proceed through explicit gates:
    target change.
 2. Compile with Codex in read-only mode. Review the generated Brief against the selected evidence
    and target guidance. Record every Claude correction and its reason. Preserve unresolved product
-   or architecture decisions instead of inventing answers.
+   or architecture decisions instead of inventing answers. For security, privacy, authorization,
+   validation, transformation, and persistence guarantees, enumerate the relevant payload/union
+   variants, state branches, and entry points. A quote supporting one case must not be treated as
+   evidence for a broader guarantee; recollect evidence or leave the coverage gap unresolved.
 3. Approve only an accurate, implementation-ready Brief. Show me a compact readiness summary and
    ask for explicit authorization before the first workspace-write implementation call. The
    authorization must name this exact worktree and task; compile-only validation does not imply it.

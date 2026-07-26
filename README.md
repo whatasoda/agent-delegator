@@ -256,6 +256,10 @@ cost because model pricing and billing semantics are external and time-dependent
   Approximate candidates are diagnostic only and never satisfy validation. This is referential integrity, not proof that the quote
   semantically supports the claim; Claude owns that review.
 - Every MUST requires rationale, failure mode, and collected evidence.
+- Citation integrity does not establish completeness. A MUST spanning payload/union variants, state
+  branches, or entry points must be supported across its stated domain. When the compiler finds an
+  uncovered variant without collected evidence deciding its behavior, it must emit an unresolved
+  coverage gap instead of silently generalizing or narrowing the guarantee.
 - Approval v3 covers `brief.json`, `brief.md`, `evidence-bundle.json`, and `evidence.md`; verification
   also rehashes `context-request.json` and every individual source snapshot.
 - Approval v3 binds the canonical repository root, base commit, and dirty-worktree fingerprint.

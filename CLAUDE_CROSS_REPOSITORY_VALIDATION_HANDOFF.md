@@ -265,6 +265,9 @@ Check especially:
 - rationale and rejected/superseded alternatives survive extraction;
 - every MUST has meaningful evidence, rationale, and failure mode;
 - quotes exist and semantically support the associated claim;
+- cross-variant guarantees are supported for every relevant payload kind, union member, state
+  branch, and entry point rather than inferred from one representative case;
+- a discovered but undecided coverage gap is unresolved instead of being hidden by a narrower MUST;
 - missing design decisions remain unresolved;
 - compile left the target repository byte-for-byte unchanged.
 

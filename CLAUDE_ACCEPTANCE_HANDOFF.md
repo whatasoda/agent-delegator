@@ -60,7 +60,7 @@ Relevant files:
 
 Codex reports the following, but these are inputs to your review rather than proof of acceptance:
 
-- 71 agent-delegator tests pass with 225 assertions.
+- The agent-delegator automated test suite passes.
 - Tool build and typecheck pass; all repository workspaces typecheck.
 - Approval hashes are checked for `brief.json`, `brief.md`, `evidence-bundle.json`, and
   `evidence.md`; verification also rehashes the Context Request and individual snapshots.
@@ -98,6 +98,9 @@ Inspect the relevant files and confirm all of the following:
 - The compiler sees run-local source snapshots rather than mutable repository paths.
 - Brief citations must name an Evidence Bundle source ID; transcript turns must be within the
   selected range, and repository-file citations cannot claim a transcript turn.
+- Citation integrity is not mistaken for requirement completeness: guarantees over unions,
+  payload kinds, state branches, or entry points must have evidence covering their full stated
+  scope, otherwise the Brief must expose the coverage gap as unresolved.
 - Approval covers the canonical/rendered Brief, Evidence Bundle, combined evidence, Context
   Request, and individual source snapshots.
 - A changed Git HEAD blocks implementation unless explicitly acknowledged.

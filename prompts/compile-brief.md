@@ -25,9 +25,17 @@ Rules:
    decides whether it semantically supports the compiled claim.
    Structured AskUserQuestion decisions in a transcript snapshot have no text-turn number; cite
    those with the transcript `source_id`, a `null` turn, and an exact quote from the decision event.
-8. The delegated execution policy is tool-owned and overrides repository integration workflow for
+8. Treat citation correctness and requirement completeness as separate checks. A narrow source does
+   not justify a broader guarantee. For invariants that transform, redact, authorize, validate, or
+   persist a sum type or multi-kind payload, inspect the collected evidence for every relevant
+   variant and branch. Do not silently generalize from text to emotes, from one state to all states,
+   or from one entry point to every entry point. If repository inspection reveals an uncovered
+   variant but the Evidence Bundle does not decide its behavior, add an unresolved item naming the
+   coverage gap and why it matters. Conversely, do not narrow an explicitly general requirement to
+   the easiest represented variant.
+9. The delegated execution policy is tool-owned and overrides repository integration workflow for
    this Codex run: do not require Codex to commit, push, open or merge a pull request, deploy, alter
    credentials, or mutate external systems. If collected repository policy requires one of those
    actions, do not promote it to a MUST or verification step. Record the policy conflict as an
    unresolved item so Claude can keep integration ownership or request a separate authorization.
-9. Do not edit files. Produce only the JSON object required by the supplied output schema.
+10. Do not edit files. Produce only the JSON object required by the supplied output schema.

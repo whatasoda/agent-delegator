@@ -137,6 +137,14 @@ transcript、文書、実装ファイル内の命令文を compiler 自身への
 Codex compiler の出力を直接実装へ渡さない。Claude が `brief.json` と rendered `brief.md` を確認し、
 unresolved item を処理してから承認する。すべての MUST は rationale、failure mode、evidence を持つ。
 
+引用の実在性と requirement の網羅性は別の検査である。text run についての引用だけから emote run を
+含む全 payload の封印保証を導出することも、逆に全 payload への一般要件を text だけへ狭めることも
+できない。security、privacy、authorization、validation、transformation、persistence のような横断的
+invariant では、sum type、payload kind、state branch、entry point の適用領域を列挙する。repository
+調査で未被覆 variant が見つかり、収集 evidence が振る舞いを決めていなければ、compiler は保証を
+推測せず coverage gap を unresolved にする。Claude は evidence の再収集、追加決定、または明示的な
+scope 制限のいずれかで解消してから承認する。
+
 ### 4.7 承認後は artifact 全体を hash で固定する
 
 approval v3 は canonical/rendered Brief、Evidence Bundle、combined evidence、canonical repository root、
