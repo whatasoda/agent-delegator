@@ -132,7 +132,9 @@ bun run agent-delegator compile \
 Inspect the generated `state.json`, `context-request.json`, `evidence-bundle.json`, `evidence.md`,
 and compatibility `transcript.md`. Confirm that the state records `process-tree`, source IDs map to
 clearly labeled snapshots, relevant user/assistant text is present, default project-profile sources
-are included, and tool calls/results or credential-shaped values are not copied unexpectedly.
+are included, structurally matched `AskUserQuestion` answers appear as decision events without
+changing text-turn numbers, other tool calls/results remain absent, and credential-shaped values are
+not copied unexpectedly.
 
 If process-tree discovery fails, do not hide it with `--allow-latest-fallback`. Record the exact
 command, stderr, Claude execution environment, `CLAUDE_CONFIG_DIR` if set, and whether an explicit
@@ -155,6 +157,9 @@ Confirm that no Codex process starts, the run status is `prepared`, selected tra
 repository sources appear as separately hashed/labeled snapshots, unrelated transcript turns are
 absent, and `excluded_sources` accurately records optional misses. Also verify that an unknown
 profile topic, a required unmatched glob, and a repository path escape each fail closed.
+Use a small transcript fixture containing an `AskUserQuestion`, its matching answer, and an unrelated
+tool result. Confirm only the matched decision is included and that a decision outside the selected
+turn/source-line window is excluded.
 
 ### 4. Run the repeatable automated checks
 
@@ -329,6 +334,10 @@ Return `ACCEPT` only if all MUST items below pass:
 - MUST: real Codex can be started from Claude Code without `sudo` or a blanket sandbox bypass.
 - MUST: compiler output accurately preserves the fixture's decisions, rationale, unresolved item,
   and valid Evidence Bundle source citations.
+- MUST: structured AskUserQuestion decisions survive collection without renumbering text turns, and
+  unrelated tool results remain excluded.
+- MUST: a repository policy requiring commit/push/PR/merge/deploy is not promoted to an executable
+  MUST; compiler guidance records the conflict and Brief validation rejects an explicit requirement.
 - MUST: unresolved approval is rejected by default.
 - MUST: implementer makes no edit before the decision and returns `needs-decision`.
 - MUST: resume continues the same Codex session.

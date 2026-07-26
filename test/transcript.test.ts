@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeTranscript, redactSecrets, renderTranscriptEvidence } from "../src/transcript.js";
+import {
+  normalizeTranscript,
+  normalizeTranscriptDocument,
+  redactSecrets,
+  renderTranscriptEvidence,
+} from "../src/transcript.js";
 
 describe("normalizeTranscript", () => {
   test("keeps user and assistant text while dropping tool content", () => {
@@ -52,6 +57,56 @@ describe("normalizeTranscript", () => {
     ]);
     expect(rendered).not.toContain("</transcript-turn><transcript-turn number=\"99\">");
     expect(rendered).toContain("&lt;/transcript-turn&gt;");
+  });
+
+  test("adds only matched AskUserQuestion decisions without renumbering text turns", () => {
+    const questions = [{
+      question: "Which layout should we use?",
+      options: [
+        { label: "Intrinsic", description: "Avoids clipping; api_key=abcdefghijklmnop" },
+        { label: "Fixed", description: "Keeps the old frame" },
+      ],
+    }];
+    const jsonl = [
+      JSON.stringify({ type: "user", message: { content: "Design the filter" } }),
+      JSON.stringify({
+        type: "assistant",
+        uuid: "ask-entry",
+        message: { content: [{ type: "tool_use", id: "ask-1", name: "AskUserQuestion", input: { questions } }] },
+      }),
+      JSON.stringify({
+        type: "user",
+        parentUuid: "ask-entry",
+        message: { content: [{ type: "tool_result", tool_use_id: "ask-1", content: "selected" }] },
+        toolUseResult: { questions, answers: { "Which layout should we use?": "Intrinsic" } },
+      }),
+      JSON.stringify({
+        type: "user",
+        message: { content: [{ type: "tool_result", tool_use_id: "bash-1", content: "UNRELATED_TOOL_OUTPUT" }] },
+        toolUseResult: { questions, answers: { "Which layout should we use?": "Fixed" } },
+      }),
+      JSON.stringify({ type: "assistant", message: { content: "Implementation-ready" } }),
+    ].join("\n");
+
+    const document = normalizeTranscriptDocument(jsonl, { toTurn: 1 });
+    expect(document.turns).toEqual([
+      { turn: 1, sourceLine: 1, role: "user", text: "Design the filter" },
+    ]);
+    expect(document.decisions).toHaveLength(1);
+    expect(document.decisions[0]!.questions[0]).toMatchObject({
+      question: "Which layout should we use?",
+      selectedAnswer: "Intrinsic",
+      selectedRationale: "Avoids clipping; api_key=[REDACTED]",
+    });
+
+    const rendered = renderTranscriptEvidence(document.turns, document.decisions);
+    expect(rendered).toContain("Structured decisions from AskUserQuestion");
+    expect(rendered).toContain('<option status="selected">Intrinsic');
+    expect(rendered).toContain('<option status="not-selected">Fixed');
+    expect(rendered).not.toContain("abcdefghijklmnop");
+    expect(rendered).not.toContain("UNRELATED_TOOL_OUTPUT");
+
+    expect(normalizeTranscriptDocument(jsonl, { fromTurn: 2 }).decisions).toEqual([]);
   });
 });
 

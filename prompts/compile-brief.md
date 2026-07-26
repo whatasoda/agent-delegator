@@ -23,4 +23,11 @@ Rules:
 7. Quotes in sources must be short, exact substrings from the cited snapshot (and cited transcript
    turn), not paraphrases or large excerpts. A quote proves referential integrity only; Claude still
    decides whether it semantically supports the compiled claim.
-8. Do not edit files. Produce only the JSON object required by the supplied output schema.
+   Structured AskUserQuestion decisions in a transcript snapshot have no text-turn number; cite
+   those with the transcript `source_id`, a `null` turn, and an exact quote from the decision event.
+8. The delegated execution policy is tool-owned and overrides repository integration workflow for
+   this Codex run: do not require Codex to commit, push, open or merge a pull request, deploy, alter
+   credentials, or mutate external systems. If collected repository policy requires one of those
+   actions, do not promote it to a MUST or verification step. Record the policy conflict as an
+   unresolved item so Claude can keep integration ownership or request a separate authorization.
+9. Do not edit files. Produce only the JSON object required by the supplied output schema.

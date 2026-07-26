@@ -34,6 +34,7 @@ export interface RunEvent {
     excluded_source_count?: number;
     unresolved_item_count?: number;
     citation_count?: number;
+    citation_turn_correction_count?: number;
     changed_file_count?: number;
     patch_bytes?: number;
     codex_invoked?: boolean;

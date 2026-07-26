@@ -59,13 +59,14 @@ describe("run observation", () => {
       failure_category: null,
       message: null,
       usage: { input_tokens: 10, cached_input_tokens: 3, output_tokens: 4 },
-      metrics: { citation_count: 2, exit_code: 0 },
+      metrics: { citation_count: 2, citation_turn_correction_count: 1, exit_code: 0 },
       artifacts: ["attempts/compile/001/output.json"],
     });
 
     const events = await readRunEvents(runDir);
     expect(events).toHaveLength(1);
     expect(events[0]?.usage?.cached_input_tokens).toBe(3);
+    expect(events[0]?.metrics.citation_turn_correction_count).toBe(1);
     expect(classifyFailure(new Error("Codex exceeded the 10ms timeout"), "compile")).toBe("codex-timeout");
     expect(classifyFailure(new Error("Repository HEAD changed"), "implement")).toBe("repository-drift");
   });

@@ -150,9 +150,11 @@ Resolution follows this order:
 The process-tree and index strategy is adapted from the existing `agent-extensions` session
 resolver. `CLAUDE_CONFIG_DIR` is supported; the default is `~/.claude`.
 
-Only textual user and assistant turns are copied. Tool calls/results are omitted, and common
-credential-shaped strings are redacted. `transcript.md` remains as a compatibility view containing
-the selected transcript snapshots; `evidence.md` is the canonical complete compiler input.
+Textual user and assistant turn numbering remains stable. Tool calls/results are omitted except for
+structurally matched `AskUserQuestion` prompts and user answers, which are appended as decision
+events without consuming turn numbers. Common credential-shaped strings are redacted.
+`transcript.md` remains as a compatibility view containing the selected transcript snapshots;
+`evidence.md` is the canonical complete compiler input.
 
 ## Run files
 
@@ -235,8 +237,12 @@ cost because model pricing and billing semantics are external and time-dependent
   optional. Optionality covers absence, not permission to escape the repository.
 - Generated and Claude-edited Briefs are validated against the complete JSON Schema. Brief
   citations must refer to a source ID in the collected Evidence Bundle, and each citation quote must
-  occur in that snapshot (and exact transcript turn). This is referential integrity, not proof that
-  the quote semantically supports the claim; Claude owns that review.
+  occur in that snapshot. During compilation, a quote attributed to the wrong transcript turn is
+  corrected only when the same quote identifies exactly one turn in that snapshot. The raw compiler
+  output remains in `attempts/compile/NNN/output.json`, and corrections are recorded separately in
+  `citation-turn-corrections.json`; ambiguous or absent quotes still fail validation. Approval stays
+  strict about the canonical turn. This is referential integrity, not proof that the quote
+  semantically supports the claim; Claude owns that review.
 - Every MUST requires rationale, failure mode, and collected evidence.
 - Approval v3 covers `brief.json`, `brief.md`, `evidence-bundle.json`, and `evidence.md`; verification
   also rehashes `context-request.json` and every individual source snapshot.
@@ -262,6 +268,12 @@ does not turn prompt instructions into an absolute external-mutation security bo
 
 Codex calls time out after 1800 seconds by default. Override this with `--timeout-seconds` or
 `AGENT_DELEGATOR_TIMEOUT_SECONDS`. Stderr and event streams are retained per attempt.
+
+The caller's foreground-command timeout is separate from the agent-delegator timeout. When Claude's
+shell tool cannot wait for the configured Codex duration, keep the controller alive with the shell
+tool's supported background mechanism, retain its output, and poll `status --observation` plus the
+attempt logs. A caller timeout that terminates the controller is an interruption, not evidence that
+Codex made no edits. Inspect the worktree and surviving child processes before retrying.
 
 `status` detects an active state whose controller process disappeared and converts it to `failed`.
 A failed read-only compiler call can be retried with `compile --run <id> --retry`. A failed

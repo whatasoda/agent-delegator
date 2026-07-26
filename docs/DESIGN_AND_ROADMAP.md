@@ -112,6 +112,19 @@ semantic correctness は Claude の Brief review が所有する。compiler は�
 read-only で参照できるため、未収集の情報を decision evidence にしないこと自体は prompt 上の規律で
 あり、filesystem isolation ではない。
 
+compile 時に引用語句が指定 turn にはなく、同じ transcript snapshot 内のただ一つの turn にだけ
+実在する場合は、その turn を canonical Brief へ自動補正する。生の model output は attempt 配下に
+保持し、補正前後は `citation-turn-corrections.json` と run metric に記録する。同一引用が複数 turn に
+ある場合は意味上の帰属を推測せず、候補 turn を示して reject する。全文に存在しない引用も従来どおり
+reject する。approve 時には自動補正を行わず canonical Brief を厳密に再検証するため、レビュー後の
+誤編集を黙って修復することはない。
+
+通常の text turn 番号は安定させたまま、構造的に対応を確認できる `AskUserQuestion` と user answer
+だけを decision event として transcript snapshot に追記する。他の tool call/result は収集しない。
+decision event の citation は transcript source ID と `turn: null` を使う。quote 照合は通常の空白
+正規化を優先し、それで一致しない場合だけ Markdown 装飾や CJK 改行など presentation 差を無視する。
+case や実際の語句差は引き続き不一致とする。
+
 ### 4.5 source content は instruction ではなく untrusted evidence
 
 transcript、文書、実装ファイル内の命令文を compiler 自身への指示として実行しない。source role
@@ -138,6 +151,9 @@ writer に対する署名機構ではない。v1 approval は実行不可、v2 �
 resume でも approval と HEAD を再検証し、sandbox を `workspace-write` に明示的に固定する。
 raw transcript/Evidence は compiler の入力に限定し、implementer prompt には含めない。implementer は
 承認済み Brief と repository の durable guidance を読み、不足を `needs-decision` に戻す。
+repository policy がこれらの integration action を Codex に要求しても、compiler は MUST や
+verification へ昇格させず unresolved conflict として返す。Brief validator も明示的な commit、push、
+PR、merge、deploy 要求を approval 前に拒否する。
 
 ### 4.9 project profile は repository 固有のお作法を routing する
 
@@ -184,7 +200,9 @@ usage を出さない Codex call も欠測率として残し、0 token と誤認
 - raw transcript input cap、static glob escape guard、runtime artifact の glob 除外
 - run-local snapshot、Evidence Bundle、combined evidence
 - source ID、transcript turn、exact quote の Brief citation validation
+- turn番号を変えない構造化 AskUserQuestion decision event と限定的 presentation quote normalization
 - Brief/result/state schema validation、approval v3、hash/HEAD/worktree verification
+- delegated execution policy の compiler rule と禁止 integration action の approval guard
 - read-only compile、workspace-write implement、同一 session resume
 - private run artifacts、timeout、stderr persistence、attempt count、明示 retry、stale-state recovery
 - task metadata、append-only stage event、attempt ごとの raw output/prompt/checkpoint

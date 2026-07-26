@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import packageJson from "../package.json";
 import { createApproval, verifyApproval } from "./approval.js";
 import {
+  repairBriefCitationTurns,
   renderBrief,
   type BriefDraft,
   type BriefEvidenceSource,
@@ -576,6 +577,9 @@ async function commandCompile(args: string[]): Promise<void> {
   const compileAttemptDir = attemptDirectory(runDir, "compile", attempt);
   const promptPath = join(compileAttemptDir, "prompt.md");
   const generatedPath = join(compileAttemptDir, "output.json");
+  const attemptPrefix = `attempts/compile/${String(attempt).padStart(3, "0")}`;
+  const citationCorrectionsArtifact = `${attemptPrefix}/citation-turn-corrections.json`;
+  const citationCorrectionsPath = join(compileAttemptDir, "citation-turn-corrections.json");
   const compileStartedAt = Date.now();
   await writeText(promptPath, compilerPrompt(runDir, state.objective, state.repoRoot));
   const codexArgs = [
@@ -601,9 +605,10 @@ async function commandCompile(args: string[]): Promise<void> {
   await appendRunEvent(runDir, {
     stage: "compile", event: "started", attempt, duration_ms: null, model,
     run_status: state.status, failure_category: null, message: null, usage: null, metrics: {},
-    artifacts: [`attempts/compile/${String(attempt).padStart(3, "0")}/prompt.md`],
+    artifacts: [`${attemptPrefix}/prompt.md`],
   });
   let codexResult: Awaited<ReturnType<typeof runCodex>> | null = null;
+  let citationTurnCorrectionCount = 0;
   try {
     codexResult = await runCodex(codexArgs, {
       cwd: state.repoRoot,
@@ -619,9 +624,18 @@ async function commandCompile(args: string[]): Promise<void> {
     const brief = await readJson<unknown>(generatedPath);
     const errors = validateBrief(brief);
     if (errors.length > 0) throw new Error(`Generated brief failed validation: ${errors.join("; ")}`);
-    const validatedBrief = brief as BriefDraft;
     const evidenceBundle = await readJson<EvidenceBundle>(join(runDir, "evidence-bundle.json"));
-    const evidenceErrors = validateBriefEvidence(validatedBrief, await evidenceSourceMap(runDir, evidenceBundle));
+    const evidenceSources = await evidenceSourceMap(runDir, evidenceBundle);
+    const repaired = repairBriefCitationTurns(brief as BriefDraft, evidenceSources);
+    const validatedBrief = repaired.brief;
+    citationTurnCorrectionCount = repaired.corrections.length;
+    if (citationTurnCorrectionCount > 0) {
+      await writeJson(citationCorrectionsPath, {
+        schema_version: "1",
+        corrections: repaired.corrections,
+      });
+    }
+    const evidenceErrors = validateBriefEvidence(validatedBrief, evidenceSources);
     if (evidenceErrors.length > 0) {
       throw new Error(`Generated brief cites invalid evidence: ${evidenceErrors.join("; ")}`);
     }
@@ -639,11 +653,14 @@ async function commandCompile(args: string[]): Promise<void> {
       model, run_status: state.status, failure_category: null, message: null, usage: codexResult.usage,
       metrics: {
         unresolved_item_count: validatedBrief.unresolved_items.length,
-        citation_count: briefCitationCount(validatedBrief), codex_invoked: true, exit_code: codexResult.exitCode,
+        citation_count: briefCitationCount(validatedBrief),
+        citation_turn_correction_count: citationTurnCorrectionCount,
+        codex_invoked: true, exit_code: codexResult.exitCode,
       },
       artifacts: [
-        `attempts/compile/${String(attempt).padStart(3, "0")}/output.json`,
-        `attempts/compile/${String(attempt).padStart(3, "0")}/events.jsonl`,
+        `${attemptPrefix}/output.json`,
+        `${attemptPrefix}/events.jsonl`,
+        ...(citationTurnCorrectionCount > 0 ? [citationCorrectionsArtifact] : []),
         "brief.generated.json", "brief.json", "brief.md",
       ],
     });
@@ -654,6 +671,7 @@ async function commandCompile(args: string[]): Promise<void> {
       brief: briefPath,
       rendered_brief: join(runDir, "brief.md"),
       unresolved_items: validatedBrief.unresolved_items.length,
+      citation_turn_corrections: citationTurnCorrectionCount,
       compiler_session_id: state.compilerSessionId,
       attempt,
     });
@@ -668,11 +686,16 @@ async function commandCompile(args: string[]): Promise<void> {
       stage: "compile", event: "failed", attempt, duration_ms: Date.now() - compileStartedAt,
       model, run_status: state.status, failure_category: classifyFailure(error, "compile"),
       message: state.failure, usage: codexResult?.usage ?? null,
-      metrics: { codex_invoked: true, ...(codexResult ? { exit_code: codexResult.exitCode } : {}) },
+      metrics: {
+        citation_turn_correction_count: citationTurnCorrectionCount,
+        codex_invoked: true,
+        ...(codexResult ? { exit_code: codexResult.exitCode } : {}),
+      },
       artifacts: [
-        `attempts/compile/${String(attempt).padStart(3, "0")}/events.jsonl`,
-        `attempts/compile/${String(attempt).padStart(3, "0")}/stderr.log`,
-        ...(await exists(generatedPath) ? [`attempts/compile/${String(attempt).padStart(3, "0")}/output.json`] : []),
+        `${attemptPrefix}/events.jsonl`,
+        `${attemptPrefix}/stderr.log`,
+        ...(await exists(generatedPath) ? [`${attemptPrefix}/output.json`] : []),
+        ...(await exists(citationCorrectionsPath) ? [citationCorrectionsArtifact] : []),
       ],
     });
     throw error;
@@ -1106,7 +1129,7 @@ function usage(): string {
   agent-delegator resolve-transcript [--cwd <path>] [--json] [--allow-latest-fallback]
   agent-delegator collect (--context <path> | --objective <text>) [source options]
   agent-delegator compile (--run <id> | --context <path> | --objective <text>) [--model <model>] [--dry-run]
-  agent-delegator approve --run <id-or-path> [--by claude]
+  agent-delegator approve --run <id-or-path> [--by claude] [--allow-unresolved]
   agent-delegator implement --run <id-or-path> [--model <model>] [--retry]
   agent-delegator resume --run <id-or-path> (--message <text> | --addendum <path>) [--retry]
   agent-delegator status --run <id-or-path> [--observation]
@@ -1120,6 +1143,7 @@ Common options:
   --context <path>          Collect sources from a Context Request
   --project-profile <path>  Override agent-delegator.project.json
   --allow-latest-fallback   Allow compile to use the newest transcript for this cwd
+  --allow-unresolved        Approve a reviewed Brief that still has explicit unresolved items
   --allow-base-change       Allow implementation/resume after repository HEAD changed
   --allow-worktree-change   Allow execution after reviewing a changed worktree
   --timeout-seconds <n>     Codex call timeout (default 1800)

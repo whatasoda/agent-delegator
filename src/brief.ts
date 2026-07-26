@@ -58,8 +58,78 @@ export interface BriefEvidenceSource {
   content?: string;
 }
 
+export interface CitationTurnCorrection {
+  claim: string;
+  source_id: string;
+  quote: string;
+  cited_turn: number;
+  corrected_turn: number;
+}
+
 function normalizedText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function presentationNormalizedText(value: string): string {
+  // Fall back only for source presentation artifacts. Case and single-character code operators stay
+  // significant so this does not turn referential grounding into semantic/paraphrase matching.
+  return value
+    .normalize("NFC")
+    .replace(/\n[ \t]*(?:\/\/+|\*+|#+|--)[ \t]?/g, "\n")
+    .replace(/\*\*|~~|`+/g, "")
+    .replace(
+      /([\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}])[\s\u3000]+(?=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}])/gu,
+      "$1",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function quoteOccursIn(content: string, quote: string): boolean {
+  if (normalizedText(content).includes(normalizedText(quote))) return true;
+  const normalizedQuote = presentationNormalizedText(quote);
+  return normalizedQuote.length > 0 && presentationNormalizedText(content).includes(normalizedQuote);
+}
+
+const forbiddenDelegatedActions = [
+  {
+    action: "commit",
+    pattern: /\bgit\s+commit\b|\b(?:must|shall|required\s+to)\s+commit\b|コミット(?:する|して|せよ|を作成|を実行)/giu,
+  },
+  {
+    action: "push",
+    pattern: /\bgit\s+push\b|\b(?:must|shall|required\s+to)\s+push\b|プッシュ(?:する|して|せよ|を実行)/giu,
+  },
+  {
+    action: "open a pull request",
+    pattern: /\bgh\s+pr\s+create\b|\b(?:open|create)\s+(?:a\s+)?(?:pull\s+request|PR)\b|(?:PR|プルリクエスト)を(?:作成|起票)する/giu,
+  },
+  {
+    action: "merge",
+    pattern: /\bgit\s+merge\b|\b(?:must|shall|required\s+to)\s+merge\b|マージ(?:する|して|せよ|を実行)/giu,
+  },
+  {
+    action: "deploy",
+    pattern: /\b(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?deploy\b|\b(?:wrangler|vercel)\s+deploy\b|\b(?:must|shall|required\s+to)\s+deploy\b|デプロイ(?:する|して|せよ|を実行)/giu,
+  },
+] as const;
+
+function isNegatedAction(text: string, start: number, end: number): boolean {
+  const before = text.slice(Math.max(0, start - 48), start).toLowerCase();
+  const after = text.slice(end, Math.min(text.length, end + 32)).toLowerCase();
+  return /(?:do\s+not|don't|must\s+not|never|without)[^.!?;\n]{0,48}$/.test(before) ||
+    /(?:禁止|行わない|実行しない|しない|せず|不要)/u.test(after);
+}
+
+function forbiddenAction(text: string): string | null {
+  for (const candidate of forbiddenDelegatedActions) {
+    candidate.pattern.lastIndex = 0;
+    for (const match of text.matchAll(candidate.pattern)) {
+      const start = match.index ?? 0;
+      if (!isNegatedAction(text, start, start + match[0].length)) return candidate.action;
+    }
+  }
+  return null;
 }
 
 function citedContent(source: BriefSource, evidence: BriefEvidenceSource): string | null {
@@ -75,17 +145,65 @@ function citedContent(source: BriefSource, evidence: BriefEvidenceSource): strin
     .replaceAll("&amp;", "&") ?? null;
 }
 
+function transcriptTurns(content: string): { turn: number; content: string }[] {
+  const turns: { turn: number; content: string }[] = [];
+  const pattern = /<transcript-turn number=["'](\d+)["'][^>]*>\n([\s\S]*?)\n<\/transcript-turn>/g;
+  for (const match of content.matchAll(pattern)) {
+    turns.push({
+      turn: Number(match[1]),
+      content: match[2]!
+        .replaceAll("&lt;", "<")
+        .replaceAll("&gt;", ">")
+        .replaceAll("&amp;", "&"),
+    });
+  }
+  return turns;
+}
+
+function briefSourceGroups(brief: BriefDraft): { label: string; sources: BriefSource[] }[] {
+  return [
+    ...brief.decisions.map((item, index) => ({ label: `decision ${index + 1}`, sources: item.sources })),
+    ...brief.constraints.map((item, index) => ({ label: `constraint ${index + 1}`, sources: item.sources })),
+    ...brief.unresolved_items.map((item, index) => ({ label: `unresolved item ${index + 1}`, sources: item.sources })),
+  ];
+}
+
+export function repairBriefCitationTurns(
+  brief: BriefDraft,
+  evidenceSources: Map<string, BriefEvidenceSource>,
+): { brief: BriefDraft; corrections: CitationTurnCorrection[] } {
+  const repaired = structuredClone(brief);
+  const corrections: CitationTurnCorrection[] = [];
+  for (const group of briefSourceGroups(repaired)) {
+    for (const source of group.sources) {
+      if (source.turn === null) continue;
+      const evidence = evidenceSources.get(source.source_id);
+      if (evidence?.kind !== "transcript" || evidence.content === undefined) continue;
+      const cited = citedContent(source, evidence);
+      if (cited !== null && quoteOccursIn(cited, source.quote)) continue;
+      const candidates = transcriptTurns(evidence.content)
+        .filter((turn) => quoteOccursIn(turn.content, source.quote));
+      if (candidates.length !== 1) continue;
+      const citedTurn = source.turn;
+      source.turn = candidates[0]!.turn;
+      corrections.push({
+        claim: group.label,
+        source_id: source.source_id,
+        quote: source.quote,
+        cited_turn: citedTurn,
+        corrected_turn: source.turn,
+      });
+    }
+  }
+  return { brief: repaired, corrections };
+}
+
 export function validateBriefEvidence(
   brief: BriefDraft,
   evidenceSources: Map<string, BriefEvidenceSource>,
 ): string[] {
   const errors: string[] = [];
-  const groups: { label: string; sources: BriefSource[] }[] = [
-    ...brief.decisions.map((item, index) => ({ label: `decision ${index + 1}`, sources: item.sources })),
-    ...brief.constraints.map((item, index) => ({ label: `constraint ${index + 1}`, sources: item.sources })),
-    ...brief.unresolved_items.map((item, index) => ({ label: `unresolved item ${index + 1}`, sources: item.sources })),
-  ];
-  for (const group of groups) {
+  for (const group of briefSourceGroups(brief)) {
     for (const source of group.sources) {
       const evidence = evidenceSources.get(source.source_id);
       if (!evidence) {
@@ -107,10 +225,27 @@ export function validateBriefEvidence(
         );
       }
       const content = citedContent(source, evidence);
+      const candidateTurns = evidence.kind === "transcript" && source.turn !== null && evidence.content !== undefined
+        ? transcriptTurns(evidence.content)
+          .filter((turn) => quoteOccursIn(turn.content, source.quote))
+          .map((turn) => turn.turn)
+        : [];
       if (evidence.content !== undefined && content === null) {
-        errors.push(`${group.label} cites turn ${source.turn} that is absent from ${source.source_id}`);
-      } else if (content !== null && !normalizedText(content).includes(normalizedText(source.quote))) {
-        errors.push(`${group.label} quote does not occur in ${source.source_id}${source.turn ? ` turn ${source.turn}` : ""}`);
+        if (candidateTurns.length) {
+          errors.push(
+            `${group.label} quote occurs in ${source.source_id} transcript turn${candidateTurns.length === 1 ? "" : "s"} ${candidateTurns.join(", ")}, not cited turn ${source.turn}`,
+          );
+        } else {
+          errors.push(`${group.label} cites turn ${source.turn} that is absent from ${source.source_id}`);
+        }
+      } else if (content !== null && !quoteOccursIn(content, source.quote)) {
+        if (candidateTurns.length) {
+          errors.push(
+            `${group.label} quote occurs in ${source.source_id} transcript turn${candidateTurns.length === 1 ? "" : "s"} ${candidateTurns.join(", ")}, not cited turn ${source.turn}`,
+          );
+        } else {
+          errors.push(`${group.label} quote does not occur in ${source.source_id}${source.turn ? ` turn ${source.turn}` : ""}`);
+        }
       }
     }
   }
@@ -137,6 +272,14 @@ export function validateBrief(brief: unknown): string[] {
     if (constraint.level === "must" && !constraint.failure_mode.trim()) {
       errors.push(`MUST constraint ${index + 1} has no failure mode`);
     }
+    if (constraint.level === "must") {
+      const action = forbiddenAction(constraint.rule);
+      if (action) errors.push(`MUST constraint ${index + 1} requires forbidden delegated action: ${action}`);
+    }
+  }
+  for (const [index, command] of brief.verification.entries()) {
+    const action = forbiddenAction(command);
+    if (action) errors.push(`Verification item ${index + 1} requires forbidden delegated action: ${action}`);
   }
   return errors;
 }

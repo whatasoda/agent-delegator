@@ -8,7 +8,7 @@ import projectProfileSchema from "../schemas/project-profile.schema.json";
 import { readJson, sha256File, writeJson, writeText } from "./files.js";
 import { resolveClaudeTranscript } from "./session.js";
 import {
-  normalizeTranscriptFile,
+  normalizeTranscriptDocumentFile,
   redactSecrets,
   renderTranscriptEvidence,
 } from "./transcript.js";
@@ -356,17 +356,18 @@ export async function collectEvidence(options: {
     if (transcriptMetadata.size > maxTranscriptInputBytes) {
       throw new Error(`Transcript input exceeds max_transcript_input_bytes (${maxTranscriptInputBytes}): ${resolved.path}`);
     }
-    const turns = await normalizeTranscriptFile(resolved.path, {
+    const transcriptDocument = await normalizeTranscriptDocumentFile(resolved.path, {
       fromTurn: transcript.from_turn,
       toTurn: transcript.to_turn,
       redact: options.redact,
     });
+    const { turns } = transcriptDocument;
     if (!turns.length) {
       if (transcript.required ?? true) throw new Error(`Transcript selection contains no text turns: ${resolved.path}`);
       excludedSources.push({ locator: resolved.path, reason: "Selected turn range contains no text" });
       continue;
     }
-    const content = renderTranscriptEvidence(turns);
+    const content = renderTranscriptEvidence(turns, transcriptDocument.decisions);
     const snapshotBytes = snapshotBytesWithinLimits(
       content,
       resolved.path,

@@ -224,7 +224,8 @@ and `run-events.jsonl`. Confirm:
 - the bundle's repository root is the target, not the tool checkout;
 - unrelated transcript topics and files are absent;
 - target instructions and the rationale behind task constraints are present;
-- no tool call/result or obvious credential-shaped value leaked unexpectedly;
+- matched `AskUserQuestion` decisions are present, unrelated tool calls/results remain absent, and no
+  obvious credential-shaped value leaked unexpectedly;
 - source roles, revisions, hashes, byte counts, and exclusions are accurate;
 - collection made no target worktree change and started no Codex process.
 
@@ -239,8 +240,9 @@ bun "$AGENT_DELEGATOR_CLI" compile \
 ```
 
 Review `brief.generated.json`, `brief.json`, and `brief.md` against the target transcript, Evidence
-Bundle, and target guidance. Record every Claude correction rather than silently treating the
-compiler draft as correct.
+Bundle, and target guidance. If present, also review
+`attempts/compile/NNN/citation-turn-corrections.json` against the preserved raw `output.json`.
+Record every Claude correction rather than silently treating the compiler draft as correct.
 
 Check especially:
 
@@ -290,6 +292,12 @@ bun "$AGENT_DELEGATOR_CLI" implement \
   --run=<target-id>-portability-<date> \
   --runs-dir="$AGENT_DELEGATOR_RUNS_ROOT"
 ```
+
+Claude's foreground shell timeout is independent of the CLI's Codex timeout. If the shell cannot
+wait for the configured duration, use its supported background execution mechanism, preserve the
+controller output, and poll `status --observation` and the attempt logs. Do not let a short outer
+timeout kill the controller and then treat the interruption as a clean implementation failure.
+Inspect the target diff and any surviving child processes before deciding whether a retry is safe.
 
 If the result is `needs-decision`, verify that the question is focused and that Codex did not edit
 past the missing decision. Answer only that question and resume the same session:

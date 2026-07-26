@@ -73,6 +73,8 @@ const outputIndex = args.indexOf("--output-last-message");
 const output = args[outputIndex + 1];
 const isResume = args.includes("resume");
 const isBrief = args.some((arg) => arg.endsWith("brief.schema.json"));
+const citationTurn = Number(process.env.FAKE_CODEX_CITATION_TURN ?? "2");
+const constraintQuote = process.env.FAKE_CODEX_CONSTRAINT_QUOTE ?? "must wait for the exact greeting wording";
 const brief = process.env.FAKE_CODEX_INVALID_BRIEF === "1" ? {} : {
   schema_version: "1",
   objective: "Add a greeting",
@@ -83,14 +85,14 @@ const brief = process.env.FAKE_CODEX_INVALID_BRIEF === "1" ? {} : {
     statement: "Ask for exact wording before editing",
     status: "accepted",
     rationale: "The wording is a product decision",
-    sources: [{ source_id: "source-001", turn: 2, quote: "must wait for the exact greeting wording" }]
+    sources: [{ source_id: "source-001", turn: citationTurn, quote: "must wait for the exact greeting wording" }]
   }],
   constraints: [{
     level: "must",
     rule: "Do not choose the greeting without a decision",
     rationale: "The wording is deliberately unresolved",
     failure_mode: "The implementer invents product copy",
-    sources: [{ source_id: "source-001", turn: 2, quote: "must wait for the exact greeting wording" }]
+    sources: [{ source_id: "source-001", turn: citationTurn, quote: constraintQuote }]
   }],
   scope: { in_scope: ["fixture greeting"], out_of_scope: ["deployment"] },
   implementation_guidance: [],
@@ -100,7 +102,7 @@ const brief = process.env.FAKE_CODEX_INVALID_BRIEF === "1" ? {} : {
   unresolved_items: [{
     question: "What exact greeting should be used?",
     why_it_matters: "Codex must not invent product copy",
-    sources: [{ source_id: "source-001", turn: 2, quote: "must wait for the exact greeting wording" }]
+    sources: [{ source_id: "source-001", turn: citationTurn, quote: "must wait for the exact greeting wording" }]
   }]
 };
 const result = process.env.FAKE_CODEX_INVALID_RESULT === "1" ? { status: "completed" } : {
@@ -141,6 +143,75 @@ afterEach(async () => {
 });
 
 describe("agent-delegator CLI", () => {
+  test("repairs unique transcript turn mismatches while preserving the raw compiler output", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    const compile = await run(
+      [
+        "compile",
+        "--objective",
+        "Repair citation turns",
+        "--transcript",
+        transcript,
+        "--runs-dir",
+        runs,
+        "--run-id",
+        "citation-repair",
+      ],
+      repo,
+      { ...env, FAKE_CODEX_CITATION_TURN: "1" },
+    );
+
+    expect(compile.exitCode).toBe(0);
+    expect(JSON.parse(compile.stdout).citation_turn_corrections).toBe(3);
+    const runDir = join(runs, "citation-repair");
+    const raw = JSON.parse(await readFile(join(runDir, "attempts", "compile", "001", "output.json"), "utf8"));
+    const canonical = JSON.parse(await readFile(join(runDir, "brief.json"), "utf8"));
+    expect(raw.decisions[0].sources[0].turn).toBe(1);
+    expect(canonical.decisions[0].sources[0].turn).toBe(2);
+    const correctionArtifact = JSON.parse(
+      await readFile(join(runDir, "attempts", "compile", "001", "citation-turn-corrections.json"), "utf8"),
+    );
+    expect(correctionArtifact.corrections).toHaveLength(3);
+    const events = await readFile(join(runDir, "run-events.jsonl"), "utf8");
+    expect(events).toContain('"citation_turn_correction_count":3');
+    expect(events).toContain('"attempts/compile/001/citation-turn-corrections.json"');
+  });
+
+  test("records successful turn corrections even when another citation still rejects the compile", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    const compile = await run(
+      [
+        "compile",
+        "--objective",
+        "Preserve partial citation repair",
+        "--transcript",
+        transcript,
+        "--runs-dir",
+        runs,
+        "--run-id",
+        "partial-citation-repair",
+      ],
+      repo,
+      {
+        ...env,
+        FAKE_CODEX_CITATION_TURN: "1",
+        FAKE_CODEX_CONSTRAINT_QUOTE: "fabricated constraint quote",
+      },
+    );
+
+    expect(compile.exitCode).toBe(1);
+    expect(compile.stderr).toContain("quote does not occur");
+    const runDir = join(runs, "partial-citation-repair");
+    const correctionArtifact = JSON.parse(
+      await readFile(join(runDir, "attempts", "compile", "001", "citation-turn-corrections.json"), "utf8"),
+    );
+    expect(correctionArtifact.corrections).toHaveLength(2);
+    const events = await readFile(join(runDir, "run-events.jsonl"), "utf8");
+    expect(events).toContain('"event":"failed"');
+    expect(events).toContain('"citation_turn_correction_count":2');
+    expect(events).toContain('"attempts/compile/001/citation-turn-corrections.json"');
+  });
+
   test("runs compile, approval, decision, and resume lifecycle", async () => {
     const { repo, runs, transcript, env, log } = await fixture();
     const compile = await run(

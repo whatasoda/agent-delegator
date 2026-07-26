@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { renderBrief, type BriefDraft, validateBrief, validateBriefEvidence } from "../src/brief.js";
+import {
+  repairBriefCitationTurns,
+  renderBrief,
+  type BriefDraft,
+  validateBrief,
+  validateBriefEvidence,
+} from "../src/brief.js";
 
 function brief(): BriefDraft {
   return {
@@ -46,6 +52,41 @@ describe("Brief", () => {
     const draft = brief();
     draft.constraints[0]!.sources = [];
     expect(validateBrief(draft)).toContain("MUST constraint 1 has no evidence source");
+  });
+
+  test("rejects delegated integration actions while allowing explicit prohibitions", () => {
+    const requiredCommit = brief();
+    requiredCommit.constraints[0]!.rule = "変更後は英語のConventional Commits形式でコミットする";
+    expect(validateBrief(requiredCommit)).toContain(
+      "MUST constraint 1 requires forbidden delegated action: commit",
+    );
+
+    const command = brief();
+    command.verification = ["git push origin feature/task"];
+    expect(validateBrief(command)).toContain(
+      "Verification item 1 requires forbidden delegated action: push",
+    );
+
+    for (const [rule, action] of [
+      ["Open a pull request after verification", "open a pull request"],
+      ["git merge feature/task", "merge"],
+      ["bun run deploy", "deploy"],
+    ] as const) {
+      const integration = brief();
+      integration.constraints[0]!.rule = rule;
+      expect(validateBrief(integration)).toContain(
+        `MUST constraint 1 requires forbidden delegated action: ${action}`,
+      );
+    }
+
+    const prohibited = brief();
+    prohibited.constraints[0]!.rule = "Do not git commit or git push from the delegated run";
+    prohibited.verification = ["コミットしないことを確認する"];
+    expect(validateBrief(prohibited)).toEqual([]);
+
+    const descriptive = brief();
+    descriptive.constraints[0]!.rule = "Record the base commit hash in diagnostics";
+    expect(validateBrief(descriptive)).toEqual([]);
   });
 
   test("reports a missing required field without throwing", () => {
@@ -121,5 +162,124 @@ keep design authority with Claude and approve the brief
     expect(validateBriefEvidence(draft, sources)).toContain(
       "decision 1 quote does not occur in source-001 turn 12",
     );
+  });
+
+  test("repairs a transcript citation only when the quote identifies one different turn", () => {
+    const draft = brief();
+    draft.decisions[0]!.sources[0]!.turn = 10;
+    draft.decisions[0]!.sources[0]!.quote = "開くまで中身は配信画面にもワイヤにも出ない";
+    const content = `<transcript-turn number="8" source-line="80" role="assistant">
+開くまで中身は配信画面にもワイヤにも出ない
+</transcript-turn>
+<transcript-turn number="10" source-line="100" role="assistant">
+別の説明
+</transcript-turn>
+<transcript-turn number="12" source-line="120" role="assistant">
+approve the brief
+</transcript-turn>`;
+    const sources = new Map([
+      ["source-001", { kind: "transcript" as const, revision: "turns:1-20", content }],
+    ]);
+
+    const repaired = repairBriefCitationTurns(draft, sources);
+    expect(repaired.brief.decisions[0]!.sources[0]!.turn).toBe(8);
+    expect(draft.decisions[0]!.sources[0]!.turn).toBe(10);
+    expect(repaired.corrections).toEqual([{
+      claim: "decision 1",
+      source_id: "source-001",
+      quote: "開くまで中身は配信画面にもワイヤにも出ない",
+      cited_turn: 10,
+      corrected_turn: 8,
+    }]);
+    expect(validateBriefEvidence(repaired.brief, sources)).toEqual([]);
+  });
+
+  test("does not repair an ambiguous transcript quote and reports candidate turns", () => {
+    const draft = brief();
+    draft.decisions[0]!.sources[0]!.turn = 10;
+    draft.decisions[0]!.sources[0]!.quote = "既定 on";
+    const content = `<transcript-turn number="22" source-line="220" role="assistant">
+別の説明
+</transcript-turn>
+<transcript-turn number="23" source-line="230" role="assistant">
+既定 on
+</transcript-turn>
+<transcript-turn number="25" source-line="250" role="assistant">
+既定 on
+</transcript-turn>
+<transcript-turn number="12" source-line="120" role="assistant">
+approve the brief
+</transcript-turn>`;
+    const sources = new Map([
+      ["source-001", { kind: "transcript" as const, revision: "turns:1-30", content }],
+    ]);
+
+    const repaired = repairBriefCitationTurns(draft, sources);
+    expect(repaired.corrections).toEqual([]);
+    expect(repaired.brief.decisions[0]!.sources[0]!.turn).toBe(10);
+    expect(validateBriefEvidence(repaired.brief, sources)).toContain(
+      "decision 1 quote occurs in source-001 transcript turns 23, 25, not cited turn 10",
+    );
+  });
+
+  test("accepts a null-turn citation to a structured transcript decision", () => {
+    const draft = brief();
+    draft.decisions[0]!.sources[0] = {
+      source_id: "source-001",
+      turn: null,
+      quote: "Intrinsic layout",
+    };
+    const content = `<transcript-turn number="12" source-line="14" role="assistant">
+approve the brief
+</transcript-turn>
+<transcript-decision question-source-line="10" answer-source-line="11">
+<selected-answer>Intrinsic layout</selected-answer>
+</transcript-decision>`;
+    expect(validateBriefEvidence(draft, new Map([
+      ["source-001", { kind: "transcript", revision: "turns:1-20", content }],
+    ]))).toEqual([]);
+  });
+
+  test("matches a verbatim quote that spans a source line-comment continuation", () => {
+    const draft = brief();
+    // A file source whose comment PROSE wraps across a `//`-prefixed continuation line — the shape
+    // that heavily-commented TS sources produce. The quote is the clean prose, exactly as a compiler
+    // (following the "exact substring" instruction) would cite it.
+    const fileContent = "// Keep parse helpers\n// here (not raw schemas) exported so callers depend on a typed function.";
+    draft.decisions[0]!.sources[0] = {
+      source_id: "source-002",
+      turn: null,
+      quote: "Keep parse helpers here (not raw schemas) exported so callers depend on a typed function.",
+    };
+    const transcript = `<transcript-turn number="12" source-line="14" role="assistant">\napprove the brief\n</transcript-turn>`;
+    const sources = new Map([
+      // the surviving constraint still cites this transcript turn
+      ["source-001", { kind: "transcript" as const, revision: "turns:1-20", content: transcript }],
+      ["source-002", { kind: "file" as const, revision: "100:1", content: fileContent }],
+    ]);
+    // Comment markers are insignificant, so the wrapped prose quote matches — no false rejection.
+    expect(validateBriefEvidence(draft, sources)).toEqual([]);
+
+    // Inline markdown emphasis and code delimiters are presentation too.
+    sources.set("source-002", { kind: "file" as const, revision: "100:1", content: "applies the **SERVER-SIDE** disclosure `filter`" });
+    draft.decisions[0]!.sources[0]!.quote = "SERVER-SIDE disclosure filter";
+    expect(validateBriefEvidence(draft, sources)).toEqual([]);
+
+    // Case remains significant because it can distinguish identifiers and protocol values.
+    draft.decisions[0]!.sources[0]!.quote = "server-side disclosure filter";
+    expect(validateBriefEvidence(draft, sources)).toContain("decision 1 quote does not occur in source-002");
+
+    // Removing presentation delimiters must not turn a punctuation-only quote into an empty match.
+    draft.decisions[0]!.sources[0]!.quote = "```";
+    expect(validateBriefEvidence(draft, sources)).toContain("decision 1 quote does not occur in source-002");
+
+    // Line wrapping between CJK characters is presentation, not a word boundary.
+    sources.set("source-002", { kind: "file" as const, revision: "100:1", content: "FilterField の\n導入を決定する" });
+    draft.decisions[0]!.sources[0]!.quote = "FilterField の導入を決定する";
+    expect(validateBriefEvidence(draft, sources)).toEqual([]);
+
+    // The guard is not thereby loosened: a genuine paraphrase (different WORDS) still fails.
+    draft.decisions[0]!.sources[0]!.quote = "applies the client-side disclosure filter";
+    expect(validateBriefEvidence(draft, sources)).toContain("decision 1 quote does not occur in source-002");
   });
 });

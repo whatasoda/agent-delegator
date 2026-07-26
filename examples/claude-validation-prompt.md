@@ -67,7 +67,10 @@ Proceed through explicit gates:
 4. Once authorized, implement only in the same worktree from which the run was collected and
    approved. Independently review the complete diff and run the target-specific verification. If
    Codex returns needs-decision, answer only the focused question with its rationale and resume the
-   same run. Do not bypass base or worktree drift guards to force progress.
+   same run. Do not bypass base or worktree drift guards to force progress. If this shell's
+   foreground timeout is shorter than the configured Codex timeout, keep the controller alive using
+   the shell's supported background mechanism and poll status and attempt logs; do not kill it merely
+   because a foreground tool call cannot wait long enough.
 5. Evaluate the result and produce the report required by the validation handoff. Include source
    selection friction, Brief corrections, implementation quality, communication turns,
    permissions, skipped or failed checks, telemetry gaps, artifact locations, and actionable
