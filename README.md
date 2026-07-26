@@ -175,7 +175,9 @@ Important files:
 - `approval.json` — Claude approval and content hashes.
 - `approvals/<attempt>/` — approval history plus its worktree baseline checkpoint.
 - `attempts/<stage>/<attempt>/` — per-attempt prompts, raw structured output, Codex events, stderr,
-  and post-attempt worktree checkpoints for compile, implement, and resume.
+  and post-attempt worktree checkpoints for compile, implement, and resume. Every Codex attempt also
+  records `attempt-metadata.json` with the tool package version, Git revision, dirty state, and a
+  checkout worktree fingerprint captured before invocation.
 - `run-events.jsonl` — validated, append-only lifecycle events with timing, failure category,
   artifacts, metrics, model, and token usage when Codex emits it.
 - `result.json` — latest canonical implementer result.
@@ -200,7 +202,8 @@ and the complete event stream remains diagnostic evidence.
 ## Observation workflow
 
 Observation is designed for trial operation, not only incident debugging. A run records its input
-mix, tool version/Git revision/dirty state, stage durations, retries, model slots, Codex token usage, failure taxonomy, generated-versus-
+mix, initial tool identity plus each Codex attempt's tool revision/dirty fingerprint, stage
+durations, retries, model slots, Codex token usage, failure taxonomy, generated-versus-
 approved Brief changes, approval baseline, and each implementation checkpoint. Checkpoint patches
 include tracked and untracked files; fingerprints also cover untracked file contents.
 

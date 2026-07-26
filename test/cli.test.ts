@@ -287,6 +287,15 @@ describe("agent-delegator CLI", () => {
     expect(await stat(join(runDir, "attempts", "compile", "001", "output.json"))).toBeDefined();
     expect(await stat(join(runDir, "attempts", "implement", "001", "checkpoint.json"))).toBeDefined();
     expect(await stat(join(runDir, "attempts", "resume", "001", "checkpoint.json"))).toBeDefined();
+    for (const stage of ["compile", "implement", "resume"] as const) {
+      const metadata = JSON.parse(
+        await readFile(join(runDir, "attempts", stage, "001", "attempt-metadata.json"), "utf8"),
+      );
+      expect(metadata).toMatchObject({ schema_version: "1", stage, attempt: 1 });
+      expect(metadata.tool.version).toBe("0.0.0");
+      expect(metadata.tool.revision).toMatch(/^[a-f0-9]{40}$/);
+      expect(metadata.tool.checkout_worktree_fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    }
     expect(await readFile(join(runDir, "brief.generated.json"), "utf8")).toBe(
       await readFile(join(runDir, "brief.approved.json"), "utf8"),
     );
@@ -337,6 +346,9 @@ describe("agent-delegator CLI", () => {
       communication_efficiency: 5,
     });
     expect(await readFile(join(runDir, "run-events.jsonl"), "utf8")).toContain('"stage":"evaluate"');
+    expect(await readFile(join(runDir, "run-events.jsonl"), "utf8")).toContain(
+      '"attempts/compile/001/attempt-metadata.json"',
+    );
   });
 
   test("rejects changed approval inputs before invoking the implementer", async () => {

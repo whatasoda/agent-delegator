@@ -405,16 +405,39 @@ async function delegatorIdentity(): Promise<{
   version: string;
   revision: string | null;
   dirty: boolean | null;
+  worktreeFingerprint: string | null;
 }> {
   try {
+    const checkoutRoot = await repositoryRoot(packageRoot);
     return {
       version: packageJson.version,
       revision: await gitValue(packageRoot, "rev-parse", "HEAD"),
       dirty: Boolean(await gitValue(packageRoot, "status", "--porcelain", "--", ".")),
+      worktreeFingerprint: await worktreeFingerprint(checkoutRoot),
     };
   } catch {
-    return { version: packageJson.version, revision: null, dirty: null };
+    return { version: packageJson.version, revision: null, dirty: null, worktreeFingerprint: null };
   }
+}
+
+async function writeAttemptMetadata(
+  attemptDir: string,
+  stage: "compile" | "implement" | "resume",
+  attempt: number,
+): Promise<void> {
+  const tool = await delegatorIdentity();
+  await writeJson(join(attemptDir, "attempt-metadata.json"), {
+    schema_version: "1",
+    captured_at: new Date().toISOString(),
+    stage,
+    attempt,
+    tool: {
+      version: tool.version,
+      revision: tool.revision,
+      dirty: tool.dirty,
+      checkout_worktree_fingerprint: tool.worktreeFingerprint,
+    },
+  });
 }
 
 async function prepareRun(args: string[]): Promise<{ runDir: string; state: RunState; sourceCount: number }> {
@@ -581,6 +604,7 @@ async function commandCompile(args: string[]): Promise<void> {
   const citationCorrectionsArtifact = `${attemptPrefix}/citation-turn-corrections.json`;
   const citationCorrectionsPath = join(compileAttemptDir, "citation-turn-corrections.json");
   const compileStartedAt = Date.now();
+  await writeAttemptMetadata(compileAttemptDir, "compile", attempt);
   await writeText(promptPath, compilerPrompt(runDir, state.objective, state.repoRoot));
   const codexArgs = [
     "exec",
@@ -605,7 +629,7 @@ async function commandCompile(args: string[]): Promise<void> {
   await appendRunEvent(runDir, {
     stage: "compile", event: "started", attempt, duration_ms: null, model,
     run_status: state.status, failure_category: null, message: null, usage: null, metrics: {},
-    artifacts: [`${attemptPrefix}/prompt.md`],
+    artifacts: [`${attemptPrefix}/attempt-metadata.json`, `${attemptPrefix}/prompt.md`],
   });
   let codexResult: Awaited<ReturnType<typeof runCodex>> | null = null;
   let citationTurnCorrectionCount = 0;
@@ -658,6 +682,7 @@ async function commandCompile(args: string[]): Promise<void> {
         codex_invoked: true, exit_code: codexResult.exitCode,
       },
       artifacts: [
+        `${attemptPrefix}/attempt-metadata.json`,
         `${attemptPrefix}/output.json`,
         `${attemptPrefix}/events.jsonl`,
         ...(citationTurnCorrectionCount > 0 ? [citationCorrectionsArtifact] : []),
@@ -692,6 +717,7 @@ async function commandCompile(args: string[]): Promise<void> {
         ...(codexResult ? { exit_code: codexResult.exitCode } : {}),
       },
       artifacts: [
+        `${attemptPrefix}/attempt-metadata.json`,
         `${attemptPrefix}/events.jsonl`,
         `${attemptPrefix}/stderr.log`,
         ...(await exists(generatedPath) ? [`${attemptPrefix}/output.json`] : []),
@@ -793,6 +819,8 @@ async function commandImplement(args: string[]): Promise<void> {
   const promptPath = join(implementAttemptDir, "prompt.md");
   const generatedResultPath = join(implementAttemptDir, "result.json");
   const implementStartedAt = Date.now();
+  const attemptPrefix = `attempts/implement/${String(attempt).padStart(3, "0")}`;
+  await writeAttemptMetadata(implementAttemptDir, "implement", attempt);
   await writeText(promptPath, implementationPrompt(runDir, state.repoRoot));
   const codexArgs = [
     "exec",
@@ -818,7 +846,7 @@ async function commandImplement(args: string[]): Promise<void> {
   await appendRunEvent(runDir, {
     stage: "implement", event: "started", attempt, duration_ms: null, model,
     run_status: state.status, failure_category: null, message: null, usage: null, metrics: {},
-    artifacts: [`attempts/implement/${String(attempt).padStart(3, "0")}/prompt.md`],
+    artifacts: [`${attemptPrefix}/attempt-metadata.json`, `${attemptPrefix}/prompt.md`],
   });
   let codexResult: Awaited<ReturnType<typeof runCodex>> | null = null;
   try {
@@ -860,9 +888,10 @@ async function commandImplement(args: string[]): Promise<void> {
         codex_invoked: true, exit_code: codexResult.exitCode,
       },
       artifacts: [
-        `attempts/implement/${String(attempt).padStart(3, "0")}/result.json`,
-        `attempts/implement/${String(attempt).padStart(3, "0")}/checkpoint.json`,
-        `attempts/implement/${String(attempt).padStart(3, "0")}/worktree.patch`, "result.json",
+        `${attemptPrefix}/attempt-metadata.json`,
+        `${attemptPrefix}/result.json`,
+        `${attemptPrefix}/checkpoint.json`,
+        `${attemptPrefix}/worktree.patch`, "result.json",
       ],
     });
     print({
@@ -886,9 +915,10 @@ async function commandImplement(args: string[]): Promise<void> {
       message: state.failure, usage: codexResult?.usage ?? null,
       metrics: { codex_invoked: true, ...(codexResult ? { exit_code: codexResult.exitCode } : {}) },
       artifacts: [
-        `attempts/implement/${String(attempt).padStart(3, "0")}/events.jsonl`,
-        `attempts/implement/${String(attempt).padStart(3, "0")}/stderr.log`,
-        ...(await exists(generatedResultPath) ? [`attempts/implement/${String(attempt).padStart(3, "0")}/result.json`] : []),
+        `${attemptPrefix}/attempt-metadata.json`,
+        `${attemptPrefix}/events.jsonl`,
+        `${attemptPrefix}/stderr.log`,
+        ...(await exists(generatedResultPath) ? [`${attemptPrefix}/result.json`] : []),
       ],
     });
     throw error;
@@ -926,6 +956,8 @@ async function commandResume(args: string[]): Promise<void> {
   const resumeAttemptDir = attemptDirectory(runDir, "resume", attempt);
   const resultPath = join(resumeAttemptDir, "result.json");
   const resumeStartedAt = Date.now();
+  const attemptPrefix = `attempts/resume/${String(attempt).padStart(3, "0")}`;
+  await writeAttemptMetadata(resumeAttemptDir, "resume", attempt);
   await appendText(
     join(runDir, "decision-ledger.jsonl"),
     `${JSON.stringify({
@@ -974,7 +1006,7 @@ Continue the already approved implementation and return the structured result.`;
   await appendRunEvent(runDir, {
     stage: "resume", event: "started", attempt, duration_ms: null, model,
     run_status: state.status, failure_category: null, message: prior.question, usage: null, metrics: {},
-    artifacts: [`attempts/resume/${String(attempt).padStart(3, "0")}/addendum.md`],
+    artifacts: [`${attemptPrefix}/attempt-metadata.json`, `${attemptPrefix}/addendum.md`],
   });
   let codexResult: Awaited<ReturnType<typeof runCodex>> | null = null;
   try {
@@ -1012,9 +1044,10 @@ Continue the already approved implementation and return the structured result.`;
         codex_invoked: true, exit_code: codexResult.exitCode,
       },
       artifacts: [
-        `attempts/resume/${String(attempt).padStart(3, "0")}/result.json`,
-        `attempts/resume/${String(attempt).padStart(3, "0")}/checkpoint.json`,
-        `attempts/resume/${String(attempt).padStart(3, "0")}/worktree.patch`, "result.json",
+        `${attemptPrefix}/attempt-metadata.json`,
+        `${attemptPrefix}/result.json`,
+        `${attemptPrefix}/checkpoint.json`,
+        `${attemptPrefix}/worktree.patch`, "result.json",
       ],
     });
     print({ run_id: state.runId, run_dir: runDir, status: state.status, result: resultPath });
@@ -1031,9 +1064,10 @@ Continue the already approved implementation and return the structured result.`;
       message: state.failure, usage: codexResult?.usage ?? null,
       metrics: { codex_invoked: true, ...(codexResult ? { exit_code: codexResult.exitCode } : {}) },
       artifacts: [
-        `attempts/resume/${String(attempt).padStart(3, "0")}/events.jsonl`,
-        `attempts/resume/${String(attempt).padStart(3, "0")}/stderr.log`,
-        ...(await exists(resultPath) ? [`attempts/resume/${String(attempt).padStart(3, "0")}/result.json`] : []),
+        `${attemptPrefix}/attempt-metadata.json`,
+        `${attemptPrefix}/events.jsonl`,
+        `${attemptPrefix}/stderr.log`,
+        ...(await exists(resultPath) ? [`${attemptPrefix}/result.json`] : []),
       ],
     });
     throw error;

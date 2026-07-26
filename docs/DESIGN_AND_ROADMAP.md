@@ -175,8 +175,11 @@ prototype は `tools/agent-delegator/` に置き、application package への依
 ### 4.12 観測は run artifact と Claude 評価を結合する
 
 trial の品質を判断するには、Codex の自己申告や test pass だけでは足りない。そのため、各 stage の
-開始・完了・失敗、所要時間、attempt、model、tool revision/dirty 状態、Codex が返した token usage、失敗分類、参照 artifact を
-versioned `run-events.jsonl` に残す。compiler の生出力、Claude 承認後 Brief、承認時 worktree、各
+開始・完了・失敗、所要時間、attempt、model、Codex が返した token usage、失敗分類、参照 artifact を
+versioned `run-events.jsonl` に残す。run 開始時の tool identity に加え、各 Codex attempt の起動前に
+tool version、revision、dirty state、checkout worktree fingerprint を `attempt-metadata.json` へ固定し、
+dirty checkout 上で validator や prompt を改修しながら再試行した場合も attempt と実装版を対応づける。
+compiler の生出力、Claude 承認後 Brief、承認時 worktree、各
 implement/resume 後 worktree も別 artifact として保持する。
 
 最終的な品質判断は Claude が `evaluate` で記録する。これは自動採点ではなく、受け入れ可否、Brief、
@@ -204,7 +207,7 @@ usage を出さない Codex call も欠測率として残し、0 token と誤認
 - Brief/result/state schema validation、approval v3、hash/HEAD/worktree verification
 - delegated execution policy の compiler rule と禁止 integration action の approval guard
 - read-only compile、workspace-write implement、同一 session resume
-- private run artifacts、timeout、stderr persistence、attempt count、明示 retry、stale-state recovery
+- private run artifacts、timeout、stderr persistence、attempt count、attempt 単位の tool fingerprint、明示 retry、stale-state recovery
 - task metadata、append-only stage event、attempt ごとの raw output/prompt/checkpoint
 - generated/approved Brief comparison、Claude acceptance evaluation、cross-run JSON/Markdown report
 - token telemetry coverage、stage timing、failure taxonomy、task/model/outcome breakdown
