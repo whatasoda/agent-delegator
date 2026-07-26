@@ -42,6 +42,7 @@
         "excluded_source_count": { "type": "integer", "minimum": 0 },
         "unresolved_item_count": { "type": "integer", "minimum": 0 },
         "citation_count": { "type": "integer", "minimum": 0 },
+        "citation_source_correction_count": { "type": "integer", "minimum": 0 },
         "citation_turn_correction_count": { "type": "integer", "minimum": 0 },
         "changed_file_count": { "type": "integer", "minimum": 0 },
         "patch_bytes": { "type": "integer", "minimum": 0 },

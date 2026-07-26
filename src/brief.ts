@@ -66,6 +66,15 @@ export interface CitationTurnCorrection {
   corrected_turn: number;
 }
 
+export interface CitationSourceCorrection {
+  claim: string;
+  quote: string;
+  cited_source_id: string;
+  corrected_source_id: string;
+  cited_turn: number | null;
+  corrected_turn: number | null;
+}
+
 function normalizedText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -225,6 +234,40 @@ export function repairBriefCitationTurns(
         claim: group.label,
         source_id: source.source_id,
         quote: source.quote,
+        cited_turn: citedTurn,
+        corrected_turn: source.turn,
+      });
+    }
+  }
+  return { brief: repaired, corrections };
+}
+
+export function repairBriefCitationSources(
+  brief: BriefDraft,
+  evidenceSources: Map<string, BriefEvidenceSource>,
+): { brief: BriefDraft; corrections: CitationSourceCorrection[] } {
+  const repaired = structuredClone(brief);
+  const corrections: CitationSourceCorrection[] = [];
+  for (const group of briefSourceGroups(repaired)) {
+    for (const source of group.sources) {
+      const citedEvidence = evidenceSources.get(source.source_id);
+      const cited = citedEvidence ? citedContent(source, citedEvidence) : null;
+      if (cited !== null && quoteOccursIn(cited, source.quote)) continue;
+
+      const candidates = [...evidenceSources.entries()]
+        .filter(([, evidence]) => evidence.content !== undefined && quoteOccursIn(evidence.content, source.quote));
+      if (candidates.length !== 1 || candidates[0]![0] === source.source_id) continue;
+
+      const citedSourceId = source.source_id;
+      const citedTurn = source.turn;
+      const [correctedSourceId, correctedEvidence] = candidates[0]!;
+      source.source_id = correctedSourceId;
+      if (correctedEvidence.kind === "file") source.turn = null;
+      corrections.push({
+        claim: group.label,
+        quote: source.quote,
+        cited_source_id: citedSourceId,
+        corrected_source_id: correctedSourceId,
         cited_turn: citedTurn,
         corrected_turn: source.turn,
       });

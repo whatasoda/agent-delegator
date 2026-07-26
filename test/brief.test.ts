@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  repairBriefCitationSources,
   repairBriefCitationTurns,
   renderBrief,
   type BriefDraft,
@@ -161,6 +162,84 @@ keep design authority with Claude and approve the brief
     draft.decisions[0]!.sources[0]!.quote = "a quote that was never present";
     expect(validateBriefEvidence(draft, sources)).toContain(
       "decision 1 quote does not occur in source-001 turn 12",
+    );
+  });
+
+  test("repairs a source id only when the verbatim quote identifies one different source", () => {
+    const draft = brief();
+    const sources = new Map([
+      ["source-001", {
+        kind: "transcript" as const,
+        revision: "turns:1-20",
+        content: `<transcript-turn number="12" source-line="14" role="assistant">
+The operator must approve the brief.
+</transcript-turn>`,
+      }],
+      ["source-002", {
+        kind: "file" as const,
+        revision: "fixture:2",
+        content: "The workflow must keep design authority with Claude.",
+      }],
+    ]);
+
+    const repaired = repairBriefCitationSources(draft, sources);
+    expect(repaired.brief.decisions[0]!.sources[0]!.source_id).toBe("source-002");
+    expect(draft.decisions[0]!.sources[0]!.source_id).toBe("source-001");
+    expect(repaired.corrections).toEqual([{
+      claim: "decision 1",
+      quote: "keep design authority with Claude",
+      cited_source_id: "source-001",
+      corrected_source_id: "source-002",
+      cited_turn: 12,
+      corrected_turn: null,
+    }]);
+    expect(validateBriefEvidence(repaired.brief, sources)).toEqual([]);
+  });
+
+  test("does not repair a quote that occurs in multiple evidence sources", () => {
+    const draft = brief();
+    draft.decisions[0]!.sources[0]!.turn = null;
+    const sources = new Map([
+      ["source-001", { kind: "file" as const, revision: "fixture:1", content: "unrelated" }],
+      ["source-002", {
+        kind: "file" as const,
+        revision: "fixture:2",
+        content: "keep design authority with Claude",
+      }],
+      ["source-003", {
+        kind: "file" as const,
+        revision: "fixture:3",
+        content: "keep design authority with Claude",
+      }],
+    ]);
+
+    const repaired = repairBriefCitationSources(draft, sources);
+    expect(repaired.corrections).toEqual([]);
+    expect(repaired.brief.decisions[0]!.sources[0]!.source_id).toBe("source-001");
+    expect(validateBriefEvidence(repaired.brief, sources)).toContain(
+      "decision 1 quote does not occur in source-001",
+    );
+  });
+
+  test("does not repair a non-verbatim quote that occurs in no evidence source", () => {
+    const draft = brief();
+    draft.decisions[0]!.sources[0] = {
+      source_id: "source-001",
+      turn: null,
+      quote: "Claude retains product authority",
+    };
+    const sources = new Map([
+      ["source-001", {
+        kind: "file" as const,
+        revision: "fixture:1",
+        content: "keep design authority with Claude",
+      }],
+    ]);
+
+    const repaired = repairBriefCitationSources(draft, sources);
+    expect(repaired.corrections).toEqual([]);
+    expect(validateBriefEvidence(repaired.brief, sources)).toContain(
+      "decision 1 quote does not occur in source-001",
     );
   });
 

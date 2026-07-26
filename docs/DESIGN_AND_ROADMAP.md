@@ -112,10 +112,11 @@ semantic correctness は Claude の Brief review が所有する。compiler は�
 read-only で参照できるため、未収集の情報を decision evidence にしないこと自体は prompt 上の規律で
 あり、filesystem isolation ではない。
 
-compile 時に引用語句が指定 turn にはなく、同じ transcript snapshot 内のただ一つの turn にだけ
-実在する場合は、その turn を canonical Brief へ自動補正する。生の model output は attempt 配下に
-保持し、補正前後は `citation-turn-corrections.json` と run metric に記録する。同一引用が複数 turn に
-ある場合は意味上の帰属を推測せず、候補 turn を示して reject する。全文に存在しない引用も従来どおり
+compile 時に引用語句が指定 source にはなく、Bundle 内のただ一つの source にだけ実在する場合は、
+その source ID を canonical Brief へ自動補正する。その後、指定 turn にはなく同じ transcript snapshot
+内のただ一つの turn にだけ実在する場合は turn も補正する。生の model output は attempt 配下に保持し、
+補正前後は `citation-source-corrections.json` / `citation-turn-corrections.json` と run metric に記録する。
+同一引用が複数 source または複数 turn にある場合は意味上の帰属を推測せず reject する。全文に存在しない引用も従来どおり
 reject する。非 verbatim 引用の診断時は最長連続一致率が 50% 以上の turn を最大 3 件表示するが、
 これは修正箇所を探すための情報に限定し、validation の合格や自動補正には使わない。approve 時には
 自動補正を行わず canonical Brief を厳密に再検証するため、レビュー後の

@@ -75,6 +75,7 @@ const output = args[outputIndex + 1];
 const isResume = args.includes("resume");
 const isBrief = args.some((arg) => arg.endsWith("brief.schema.json"));
 const citationTurn = Number(process.env.FAKE_CODEX_CITATION_TURN ?? "2");
+const citationSourceId = process.env.FAKE_CODEX_CITATION_SOURCE_ID ?? "source-001";
 const constraintQuote = process.env.FAKE_CODEX_CONSTRAINT_QUOTE ?? "must wait for the exact greeting wording";
 const brief = process.env.FAKE_CODEX_INVALID_BRIEF === "1" ? {} : {
   schema_version: "1",
@@ -86,14 +87,14 @@ const brief = process.env.FAKE_CODEX_INVALID_BRIEF === "1" ? {} : {
     statement: "Ask for exact wording before editing",
     status: "accepted",
     rationale: "The wording is a product decision",
-    sources: [{ source_id: "source-001", turn: citationTurn, quote: "must wait for the exact greeting wording" }]
+    sources: [{ source_id: citationSourceId, turn: citationTurn, quote: "must wait for the exact greeting wording" }]
   }],
   constraints: [{
     level: "must",
     rule: "Do not choose the greeting without a decision",
     rationale: "The wording is deliberately unresolved",
     failure_mode: "The implementer invents product copy",
-    sources: [{ source_id: "source-001", turn: citationTurn, quote: constraintQuote }]
+    sources: [{ source_id: citationSourceId, turn: citationTurn, quote: constraintQuote }]
   }],
   scope: { in_scope: ["fixture greeting"], out_of_scope: ["deployment"] },
   implementation_guidance: [],
@@ -103,7 +104,7 @@ const brief = process.env.FAKE_CODEX_INVALID_BRIEF === "1" ? {} : {
   unresolved_items: [{
     question: "What exact greeting should be used?",
     why_it_matters: "Codex must not invent product copy",
-    sources: [{ source_id: "source-001", turn: citationTurn, quote: "must wait for the exact greeting wording" }]
+    sources: [{ source_id: citationSourceId, turn: citationTurn, quote: "must wait for the exact greeting wording" }]
   }]
 };
 const result = process.env.FAKE_CODEX_INVALID_RESULT === "1" ? { status: "completed" } : {
@@ -144,6 +145,46 @@ afterEach(async () => {
 });
 
 describe("agent-delegator CLI", () => {
+  test("repairs a unique evidence source mismatch before repairing transcript turns", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    const compile = await run(
+      [
+        "compile",
+        "--objective",
+        "Repair citation sources",
+        "--transcript",
+        transcript,
+        "--runs-dir",
+        runs,
+        "--run-id",
+        "citation-source-repair",
+      ],
+      repo,
+      { ...env, FAKE_CODEX_CITATION_SOURCE_ID: "source-999", FAKE_CODEX_CITATION_TURN: "1" },
+    );
+
+    expect(compile.exitCode).toBe(0);
+    const output = JSON.parse(compile.stdout);
+    expect(output.citation_source_corrections).toBe(3);
+    expect(output.citation_turn_corrections).toBe(3);
+    const runDir = join(runs, "citation-source-repair");
+    const raw = JSON.parse(await readFile(join(runDir, "attempts", "compile", "001", "output.json"), "utf8"));
+    const canonical = JSON.parse(await readFile(join(runDir, "brief.json"), "utf8"));
+    expect(raw.decisions[0].sources[0]).toMatchObject({ source_id: "source-999", turn: 1 });
+    expect(canonical.decisions[0].sources[0]).toMatchObject({ source_id: "source-001", turn: 2 });
+    const sourceCorrections = JSON.parse(
+      await readFile(join(runDir, "attempts", "compile", "001", "citation-source-corrections.json"), "utf8"),
+    );
+    expect(sourceCorrections.corrections).toHaveLength(3);
+    expect(sourceCorrections.corrections[0]).toMatchObject({
+      cited_source_id: "source-999",
+      corrected_source_id: "source-001",
+    });
+    const events = await readFile(join(runDir, "run-events.jsonl"), "utf8");
+    expect(events).toContain('\"citation_source_correction_count\":3');
+    expect(events).toContain('\"attempts/compile/001/citation-source-corrections.json\"');
+  });
+
   test("repairs unique transcript turn mismatches while preserving the raw compiler output", async () => {
     const { repo, runs, transcript, env } = await fixture();
     const compile = await run(

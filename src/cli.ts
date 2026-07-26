@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import packageJson from "../package.json";
 import { createApproval, verifyApproval } from "./approval.js";
 import {
+  repairBriefCitationSources,
   repairBriefCitationTurns,
   renderBrief,
   type BriefDraft,
@@ -618,6 +619,8 @@ async function commandCompile(args: string[]): Promise<void> {
   const attemptPrefix = `attempts/compile/${String(attempt).padStart(3, "0")}`;
   const citationCorrectionsArtifact = `${attemptPrefix}/citation-turn-corrections.json`;
   const citationCorrectionsPath = join(compileAttemptDir, "citation-turn-corrections.json");
+  const citationSourceCorrectionsArtifact = `${attemptPrefix}/citation-source-corrections.json`;
+  const citationSourceCorrectionsPath = join(compileAttemptDir, "citation-source-corrections.json");
   const compileStartedAt = Date.now();
   await writeAttemptMetadata(compileAttemptDir, "compile", attempt);
   await writeText(promptPath, compilerPrompt(runDir, state.objective, state.repoRoot));
@@ -647,6 +650,7 @@ async function commandCompile(args: string[]): Promise<void> {
     artifacts: [`${attemptPrefix}/attempt-metadata.json`, `${attemptPrefix}/prompt.md`],
   });
   let codexResult: Awaited<ReturnType<typeof runCodex>> | null = null;
+  let citationSourceCorrectionCount = 0;
   let citationTurnCorrectionCount = 0;
   try {
     codexResult = await runCodex(codexArgs, {
@@ -665,13 +669,21 @@ async function commandCompile(args: string[]): Promise<void> {
     if (errors.length > 0) throw new Error(`Generated brief failed validation: ${errors.join("; ")}`);
     const evidenceBundle = await readJson<EvidenceBundle>(join(runDir, "evidence-bundle.json"));
     const evidenceSources = await evidenceSourceMap(runDir, evidenceBundle);
-    const repaired = repairBriefCitationTurns(brief as BriefDraft, evidenceSources);
-    const validatedBrief = repaired.brief;
-    citationTurnCorrectionCount = repaired.corrections.length;
+    const sourceRepaired = repairBriefCitationSources(brief as BriefDraft, evidenceSources);
+    citationSourceCorrectionCount = sourceRepaired.corrections.length;
+    if (citationSourceCorrectionCount > 0) {
+      await writeJson(citationSourceCorrectionsPath, {
+        schema_version: "1",
+        corrections: sourceRepaired.corrections,
+      });
+    }
+    const turnRepaired = repairBriefCitationTurns(sourceRepaired.brief, evidenceSources);
+    const validatedBrief = turnRepaired.brief;
+    citationTurnCorrectionCount = turnRepaired.corrections.length;
     if (citationTurnCorrectionCount > 0) {
       await writeJson(citationCorrectionsPath, {
         schema_version: "1",
-        corrections: repaired.corrections,
+        corrections: turnRepaired.corrections,
       });
     }
     const evidenceErrors = validateBriefEvidence(validatedBrief, evidenceSources);
@@ -693,6 +705,7 @@ async function commandCompile(args: string[]): Promise<void> {
       metrics: {
         unresolved_item_count: validatedBrief.unresolved_items.length,
         citation_count: briefCitationCount(validatedBrief),
+        citation_source_correction_count: citationSourceCorrectionCount,
         citation_turn_correction_count: citationTurnCorrectionCount,
         codex_invoked: true, exit_code: codexResult.exitCode,
       },
@@ -700,6 +713,7 @@ async function commandCompile(args: string[]): Promise<void> {
         `${attemptPrefix}/attempt-metadata.json`,
         `${attemptPrefix}/output.json`,
         `${attemptPrefix}/events.jsonl`,
+        ...(citationSourceCorrectionCount > 0 ? [citationSourceCorrectionsArtifact] : []),
         ...(citationTurnCorrectionCount > 0 ? [citationCorrectionsArtifact] : []),
         "brief.generated.json", "brief.json", "brief.md",
       ],
@@ -711,6 +725,7 @@ async function commandCompile(args: string[]): Promise<void> {
       brief: briefPath,
       rendered_brief: join(runDir, "brief.md"),
       unresolved_items: validatedBrief.unresolved_items.length,
+      citation_source_corrections: citationSourceCorrectionCount,
       citation_turn_corrections: citationTurnCorrectionCount,
       compiler_session_id: state.compilerSessionId,
       attempt,
@@ -727,6 +742,7 @@ async function commandCompile(args: string[]): Promise<void> {
       model, run_status: state.status, failure_category: classifyFailure(error, "compile"),
       message: state.failure, usage: codexResult?.usage ?? null,
       metrics: {
+        citation_source_correction_count: citationSourceCorrectionCount,
         citation_turn_correction_count: citationTurnCorrectionCount,
         codex_invoked: true,
         ...(codexResult ? { exit_code: codexResult.exitCode } : {}),
@@ -736,6 +752,7 @@ async function commandCompile(args: string[]): Promise<void> {
         `${attemptPrefix}/events.jsonl`,
         `${attemptPrefix}/stderr.log`,
         ...(await exists(generatedPath) ? [`${attemptPrefix}/output.json`] : []),
+        ...(await exists(citationSourceCorrectionsPath) ? [citationSourceCorrectionsArtifact] : []),
         ...(await exists(citationCorrectionsPath) ? [citationCorrectionsArtifact] : []),
       ],
     });
