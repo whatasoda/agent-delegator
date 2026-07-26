@@ -16,8 +16,8 @@ runtime dependency of the core CLI.
 
 ## Current package boundary
 
-The package remains private and intentionally uses the provisional identity
-`@local/agent-delegator@0.0.0`. Its packed artifact contains only:
+The package remains private and uses the prerelease identity
+`@whatasoda/agent-delegator@0.1.0-alpha.0`. Its packed artifact contains only:
 
 - the Bun bundle exposed as the `agent-delegator` executable;
 - runtime compiler/implementer prompts and JSON Schemas;
@@ -28,26 +28,23 @@ are excluded. `bun run package:smoke` builds a tarball, checks its allowlist, in
 temporary consumer without registry access, and completes a packaged compile with a fake Codex. The
 smoke also proves that installed attempts retain an executable SHA-256 when Git metadata is absent.
 
-Do not remove `private: true` or publish this provisional package name.
+Do not remove `private: true`, change `UNLICENSED`, or publish to a registry during private trials.
 
-## Phase 1: extract and publish the core package
+## Phase 1: extracted private core package
 
-Before creating the independent repository, decide:
+The initial private-trial decisions are:
 
-- canonical repository owner and name;
-- npm scope and final package name;
-- public versus private registry visibility;
-- license and copyright owner;
-- initially supported Bun, macOS, and Linux versions.
+- repository: `whatasoda/agent-delegator`;
+- package: `@whatasoda/agent-delegator@0.1.0-alpha.0`;
+- visibility: private repository and reviewed tarballs, with no registry publication;
+- license: `UNLICENSED` while private, with Apache-2.0 proposed for a later public release;
+- validated platform: macOS arm64 with Bun 1.3.13; other platforms remain unverified.
 
-Then:
+The history-preserving repository extraction is complete. Before registry publication:
 
-1. Extract `tools/agent-delegator/` with history into the new repository root.
-2. Rewrite repository-local `tools/agent-delegator/...` links and acceptance commands for the new
-   root while retaining installed-PATH examples.
-3. Set real package `name`, prerelease `version`, `license`, `repository`, and release metadata.
-4. Keep the CLI bundle plus prompt/schema sidecars as the first distribution format.
-5. Run the complete release gate:
+1. Choose the public license and registry access policy.
+2. Keep the CLI bundle plus prompt/schema sidecars as the first distribution format.
+3. Run the complete release gate:
 
    ```sh
    bun install --frozen-lockfile
@@ -58,7 +55,7 @@ Then:
    bun pm pack --dry-run
    ```
 
-6. Inspect the tarball manifest and publish only from a clean, tagged revision with an explicit
+4. Inspect the tarball manifest and publish only from a clean, tagged revision with an explicit
    registry and access level.
 
 During private trials, a reviewed tarball can be installed without publishing:

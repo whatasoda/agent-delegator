@@ -34,27 +34,26 @@ fill an unresolved product or architecture decision.
 
 Relevant files:
 
-- `tools/agent-delegator/README.md`
-- `tools/agent-delegator/src/cli.ts`
-- `tools/agent-delegator/src/evidence.ts`
-- `tools/agent-delegator/src/repository.ts`
-- `tools/agent-delegator/src/observation.ts`
-- `tools/agent-delegator/src/result.ts`
-- `tools/agent-delegator/prompts/compile-brief.md`
-- `tools/agent-delegator/prompts/implement.md`
-- `tools/agent-delegator/schemas/context-request.schema.json`
-- `tools/agent-delegator/schemas/approval.schema.json`
-- `tools/agent-delegator/schemas/evidence-bundle.schema.json`
-- `tools/agent-delegator/schemas/project-profile.schema.json`
-- `tools/agent-delegator/schemas/brief.schema.json`
-- `tools/agent-delegator/schemas/result.schema.json`
-- `tools/agent-delegator/schemas/state.schema.json`
-- `tools/agent-delegator/schemas/run-event.schema.json`
-- `tools/agent-delegator/schemas/evaluation-input.schema.json`
-- `tools/agent-delegator/schemas/evaluation.schema.json`
-- `.claude/skills/delegate-codex/SKILL.md`
-- `agent-delegator.project.json`
+- `README.md`
+- `src/cli.ts`
+- `src/evidence.ts`
+- `src/repository.ts`
+- `src/observation.ts`
+- `src/result.ts`
+- `prompts/compile-brief.md`
+- `prompts/implement.md`
+- `schemas/context-request.schema.json`
+- `schemas/approval.schema.json`
+- `schemas/evidence-bundle.schema.json`
+- `schemas/project-profile.schema.json`
+- `schemas/brief.schema.json`
+- `schemas/result.schema.json`
+- `schemas/state.schema.json`
+- `schemas/run-event.schema.json`
+- `schemas/evaluation-input.schema.json`
+- `schemas/evaluation.schema.json`
 - `AGENTS.md`
+- `CLAUDE.md`
 
 ## Existing Codex evidence to verify independently
 
@@ -145,7 +144,7 @@ command, stderr, Claude execution environment, `CLAUDE_CONFIG_DIR` if set, and w
 
 ### 3. Verify explicit multi-source collection without Codex
 
-Copy `tools/agent-delegator/examples/context-request.json` to a temporary file. Point its transcript
+Copy `examples/context-request.json` to a temporary file. Point its transcript
 entry at this session (or an explicit fixture transcript), choose a small valid turn range, retain
 one project-profile topic, and add one explicit repository file. Then run:
 
@@ -167,24 +166,26 @@ turn/source-line window is excluded.
 ### 4. Run the repeatable automated checks
 
 ```sh
-bun run --filter @local/agent-delegator test
-bun run --filter @local/agent-delegator typecheck
-bun run --filter @local/agent-delegator build
+bun run test
+bun run typecheck
+bun run build
+bun run package:smoke
 git diff --check
 ```
 
 All must pass. Review the tests as well as their output, especially:
 
-- `tools/agent-delegator/test/cli.test.ts`
-- `tools/agent-delegator/test/approval.test.ts`
-- `tools/agent-delegator/test/evidence.test.ts`
-- `tools/agent-delegator/test/brief.test.ts`
-- `tools/agent-delegator/test/codex.test.ts`
-- `tools/agent-delegator/test/result.test.ts`
-- `tools/agent-delegator/test/observation.test.ts`
-- `tools/agent-delegator/test/run-store.test.ts`
-- `tools/agent-delegator/test/session.test.ts`
-- `tools/agent-delegator/test/transcript.test.ts`
+- `test/cli.test.ts`
+- `test/approval.test.ts`
+- `test/evidence.test.ts`
+- `test/brief.test.ts`
+- `test/codex.test.ts`
+- `test/result.test.ts`
+- `test/observation.test.ts`
+- `test/prompts.test.ts`
+- `test/run-store.test.ts`
+- `test/session.test.ts`
+- `test/transcript.test.ts`
 
 ### 5. Verify real Codex startup from Claude Code
 
@@ -209,7 +210,7 @@ inside the fixture repository, invoke this checkout's CLI with an explicit trans
 directory outside the application repository:
 
 ```sh
-bun <this-repository>/tools/agent-delegator/src/cli.ts compile \
+bun <this-repository>/src/cli.ts compile \
   --objective="Verify Claude-to-Codex decision handoff and same-session resume" \
   --transcript <fixture-transcript.jsonl> \
   --runs-dir <temporary-runs-directory> \
@@ -224,7 +225,7 @@ Confirm that normal approval fails because an unresolved item exists. For this f
 with the explicit unresolved override:
 
 ```sh
-bun <this-repository>/tools/agent-delegator/src/cli.ts approve \
+bun <this-repository>/src/cli.ts approve \
   --run claude-acceptance \
   --runs-dir <temporary-runs-directory> \
   --allow-unresolved \
@@ -234,7 +235,7 @@ bun <this-repository>/tools/agent-delegator/src/cli.ts approve \
 Run implementation:
 
 ```sh
-bun <this-repository>/tools/agent-delegator/src/cli.ts implement \
+bun <this-repository>/src/cli.ts implement \
   --run claude-acceptance \
   --runs-dir <temporary-runs-directory>
 ```
@@ -245,7 +246,7 @@ and leaves the fixture repository completely unchanged.
 Resume it with:
 
 ```sh
-bun <this-repository>/tools/agent-delegator/src/cli.ts resume \
+bun <this-repository>/src/cli.ts resume \
   --run claude-acceptance \
   --runs-dir <temporary-runs-directory> \
   --message='Use exactly this greeting text: Hello from Claude. Append exactly one LF newline.'
@@ -281,12 +282,12 @@ Inspect the run after the real E2E and confirm:
 Complete a temporary copy of `examples/evaluation-input.json` with the actual E2E verdict and run:
 
 ```sh
-bun <this-repository>/tools/agent-delegator/src/cli.ts evaluate \
+bun <this-repository>/src/cli.ts evaluate \
   --run claude-acceptance \
   --runs-dir <temporary-runs-directory> \
   --evaluation <completed-evaluation.json>
 
-bun <this-repository>/tools/agent-delegator/src/cli.ts report \
+bun <this-repository>/src/cli.ts report \
   --cwd <fixture-repository> \
   --runs-dir <temporary-runs-directory> \
   --format json

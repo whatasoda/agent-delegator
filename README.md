@@ -1,8 +1,8 @@
 # agent-delegator
 
-A repository-local prototype for delegating implementation from Claude Code to Codex. It is kept
-under `tools/` and has no dependency on the daifuku application packages so it can later move into
-an independent package.
+A standalone Bun CLI for delegating implementation from Claude Code to Codex. Claude remains the
+design, evidence-scope, approval, and integration owner; Codex compiles a reviewable Brief before it
+receives workspace-write implementation authority.
 
 For independent verification from Claude Code, follow
 [`CLAUDE_ACCEPTANCE_HANDOFF.md`](./CLAUDE_ACCEPTANCE_HANDOFF.md).
@@ -16,6 +16,22 @@ The rationale behind the architecture, settled trade-offs, gap to the intended e
 roadmap are maintained in [`docs/DESIGN_AND_ROADMAP.md`](./docs/DESIGN_AND_ROADMAP.md). The staged
 core-package, Claude-plugin, and standalone release plan is in
 [`docs/DISTRIBUTION.md`](./docs/DISTRIBUTION.md).
+
+## Private trial installation
+
+The package is prerelease, private, and `UNLICENSED`; it is not published to a registry. Build and
+inspect a versioned tarball from a clean checkout, then install that reviewed artifact with Bun:
+
+```sh
+bun install --frozen-lockfile
+bun run package:smoke
+bun pm pack --destination /absolute/private/release-directory
+bun add --global /absolute/private/release-directory/whatasoda-agent-delegator-0.1.0-alpha.0.tgz
+agent-delegator --help
+```
+
+macOS arm64 with Bun 1.3.13 is the currently validated distribution target. Other platforms remain
+unverified rather than implicitly supported.
 
 ## Pipeline
 
@@ -63,7 +79,7 @@ create a Context Request and separate collection from compilation:
 
 ```sh
 bun run agent-delegator collect \
-  --context=tools/agent-delegator/examples/context-request.json
+  --context=examples/context-request.json
 
 # Review context-request.json, evidence-bundle.json, evidence.md, and exclusions first.
 bun run agent-delegator compile --run <run-id>
@@ -95,10 +111,10 @@ profile, and required files/globs must resolve or collection fails.
 
 ## Project profile
 
-[`../../agent-delegator.project.json`](../../agent-delegator.project.json) is this repository's
-routing table. Its default sources include `AGENTS.md` and `CLAUDE.md`; topic routes add only the
-relevant design documents. Profiles are versioned project policy, while a Context Request is the
-task-specific selection made by Claude.
+`agent-delegator.project.json` belongs in each target repository. It can route default policy
+sources such as `AGENTS.md` and `CLAUDE.md`, while topic routes add only the relevant design
+documents. Profiles are versioned target-project policy; a Context Request is the task-specific
+selection made by Claude.
 
 Profiles deliberately do not perform semantic search. At this stage, Claude chooses the topic and
 explicit sources. Discovery adapters, searchable indexes, and automatic relevance expansion can be
@@ -119,7 +135,7 @@ bun run agent-delegator status --run <run-id>
 bun run agent-delegator status --run <run-id> --observation
 bun run agent-delegator evaluate \
   --run <run-id> \
-  --evaluation=tools/agent-delegator/examples/evaluation-input.json
+  --evaluation=examples/evaluation-input.json
 bun run agent-delegator report --format=markdown
 bun run agent-delegator report --format=json
 ```

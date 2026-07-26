@@ -23,7 +23,7 @@ Resolve the validation configuration as follows:
 2. Locate agent-delegator in this order:
    - AGENT_DELEGATOR_CLI, when set;
    - the `agent-delegator` executable on PATH;
-   - tools/agent-delegator/src/cli.ts under AGENT_DELEGATOR_CHECKOUT, when set;
+   - src/cli.ts under AGENT_DELEGATOR_CHECKOUT, when set;
    - tools/agent-delegator/src/cli.ts in the target repository.
    Use the first unambiguous working candidate and record its version, Git revision when available,
    and dirty state. Do not search arbitrary sibling repositories. If no candidate exists or

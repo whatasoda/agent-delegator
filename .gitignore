@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.agent-delegator/
+*.tgz
+.DS_Store

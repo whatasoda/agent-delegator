@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import packageJson from "../package.json";
 
 const temporaryDirectories: string[] = [];
 const cli = resolve(import.meta.dir, "../src/cli.ts");
@@ -292,7 +293,7 @@ describe("agent-delegator CLI", () => {
         await readFile(join(runDir, "attempts", stage, "001", "attempt-metadata.json"), "utf8"),
       );
       expect(metadata).toMatchObject({ schema_version: "1", stage, attempt: 1 });
-      expect(metadata.tool.version).toBe("0.0.0");
+      expect(metadata.tool.version).toBe(packageJson.version);
       expect(metadata.tool.revision).toMatch(/^[a-f0-9]{40}$/);
       expect(metadata.tool.checkout_worktree_fingerprint).toMatch(/^[a-f0-9]{64}$/);
       expect(metadata.tool.artifact_sha256).toMatch(/^[a-f0-9]{64}$/);

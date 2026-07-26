@@ -172,8 +172,8 @@ task-specific な選択は Context Request、長期的な project routing は pr
 
 ### 4.10 repository-local だが、独立可能な配置にする
 
-prototype は `tools/agent-delegator/` に置き、application package への依存を持たせない。実利用と
-評価を先に行い、interface が安定してから独立 package/plugin として切り出す。
+core CLI は application package から独立した専用 repository/package に置く。実利用と評価を先に
+行い、interface が安定してから Claude plugin と standalone executable を追加する。
 具体的な package 境界、release gate、Claude plugin、standalone executable の順序は
 [`DISTRIBUTION.md`](./DISTRIBUTION.md) に固定する。
 
@@ -240,7 +240,7 @@ Stage 1 の意図は「自動で最適な context を探すこと」ではなく
 | Context budget | file/byte count の上限 | model/token budget に応じた selection、compression、priority allocation |
 | Project knowledge | 単一 profile | profile composition、inheritance、versioning、organization policy |
 | Evaluation | run ごとの Claude rubric、Brief/worktree 自動比較、cross-run 集計 | rubric calibration、corpus-based extraction accuracy、citation precision、長期 outcome metrics |
-| Distribution | repository-local prototype | versioned standalone CLI/package/plugin と adapter SDK |
+| Distribution | private versioned Bun package | standalone CLI、Claude plugin、adapter SDK、public release |
 | Observability | stage timing、usage 欠測率、failure taxonomy、attempt/checkpoint、比較可能な report | pricing-aware cost、trace viewer、dashboard、longitudinal alerts、外部 telemetry export |
 | Recovery | timeout、attempt、明示 retry、stale controller 検出 | resumable operation journal、host crash 後の安全な自動診断 |
 
@@ -276,12 +276,13 @@ Stage 1 の意図は「自動で最適な context を探すこと」ではなく
 - decision/provenance graph と supersession tracking
 - task complexity に応じた compiler/implementer model routing
 - adapter SDK、plugin interface、versioned schemas、migration tooling
-- repository 外へ切り出した standalone distribution
+- standalone executable と署名済み release distribution
 - 実装結果を selection/compiler quality に戻す評価 loop
 
-## 8. 独立 package へ切り出す条件
+## 8. public release / plugin へ進む条件
 
-次を満たすまでは repository-local prototype を維持する。
+core CLI の履歴付き独立 package 化は trial の再現性を優先して完了した。次を満たすまでは package を
+private / prerelease に保ち、public registry release や互換性を約束する Claude plugin へ進まない。
 
 - 複数の実 task で Context Request と Evidence Bundle の schema が安定している。
 - 少なくとも2種類の project profile で routing が機能する。

@@ -105,8 +105,8 @@ write-capable validation.
 Use task-specific variables; do not repurpose `HOME` or `CODEX_HOME`.
 
 ```sh
-export AGENT_DELEGATOR_CHECKOUT=/absolute/path/to/daifuku-tw/codex-delegator
-export AGENT_DELEGATOR_CLI="$AGENT_DELEGATOR_CHECKOUT/tools/agent-delegator/src/cli.ts"
+export AGENT_DELEGATOR_CHECKOUT=/absolute/path/to/agent-delegator
+export AGENT_DELEGATOR_CLI="$AGENT_DELEGATOR_CHECKOUT/src/cli.ts"
 export AGENT_DELEGATOR_RUNS_ROOT=/absolute/private/path/cross-repository-runs
 mkdir -p "$AGENT_DELEGATOR_RUNS_ROOT"
 chmod 700 "$AGENT_DELEGATOR_RUNS_ROOT"
@@ -136,9 +136,10 @@ report does not provide repository-aware grouping.
 From the canonical checkout:
 
 ```sh
-bun run --filter @local/agent-delegator typecheck
-bun run --filter @local/agent-delegator test
-bun run --filter @local/agent-delegator build
+bun run typecheck
+bun run test
+bun run build
+bun run package:smoke
 git diff --check
 ```
 
@@ -454,7 +455,7 @@ write, invented product decision, or unexplained broad permission.
 
 ## Required report
 
-Create `tools/agent-delegator/CROSS_REPOSITORY_VALIDATION_REPORT.md` in the canonical tool checkout,
+Create `CROSS_REPOSITORY_VALIDATION_REPORT.md` in the canonical tool checkout,
 or return the same structure to the user when the pass must not modify the repository:
 
 ```text
