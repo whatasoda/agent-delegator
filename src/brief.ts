@@ -160,6 +160,41 @@ function transcriptTurns(content: string): { turn: number; content: string }[] {
   return turns;
 }
 
+function contiguousOverlapScore(content: string, quote: string): number {
+  const quoteCharacters = Array.from(presentationNormalizedText(quote));
+  if (quoteCharacters.length < 8 || quoteCharacters.length > 512) return 0;
+  const row = new Uint16Array(quoteCharacters.length + 1);
+  let longest = 0;
+  for (const contentCharacter of presentationNormalizedText(content)) {
+    for (let index = quoteCharacters.length; index > 0; index -= 1) {
+      row[index] = contentCharacter === quoteCharacters[index - 1]
+        ? row[index - 1]! + 1
+        : 0;
+      if (row[index]! > longest) longest = row[index]!;
+    }
+  }
+  return longest / quoteCharacters.length;
+}
+
+function nearestTranscriptTurns(
+  turns: { turn: number; content: string }[],
+  quote: string,
+): { turn: number; score: number }[] {
+  return turns
+    .map((turn) => ({ turn: turn.turn, score: contiguousOverlapScore(turn.content, quote) }))
+    .filter((candidate) => candidate.score >= 0.5)
+    .sort((left, right) => right.score - left.score || left.turn - right.turn)
+    .slice(0, 3);
+}
+
+function nearestTurnDiagnostic(candidates: { turn: number; score: number }[]): string {
+  if (candidates.length === 0) return "";
+  const label = candidates.length === 1 ? "turn" : "turns";
+  return `; nearest transcript ${label} by contiguous overlap: ${candidates
+    .map((candidate) => `${candidate.turn} (${Math.round(candidate.score * 100)}%)`)
+    .join(", ")}`;
+}
+
 function briefSourceGroups(brief: BriefDraft): { label: string; sources: BriefSource[] }[] {
   return [
     ...brief.decisions.map((item, index) => ({ label: `decision ${index + 1}`, sources: item.sources })),
@@ -225,10 +260,14 @@ export function validateBriefEvidence(
         );
       }
       const content = citedContent(source, evidence);
-      const candidateTurns = evidence.kind === "transcript" && source.turn !== null && evidence.content !== undefined
+      const turns = evidence.kind === "transcript" && source.turn !== null && evidence.content !== undefined
         ? transcriptTurns(evidence.content)
-          .filter((turn) => quoteOccursIn(turn.content, source.quote))
-          .map((turn) => turn.turn)
+        : [];
+      const candidateTurns = turns
+        .filter((turn) => quoteOccursIn(turn.content, source.quote))
+        .map((turn) => turn.turn);
+      const nearestTurns = candidateTurns.length === 0
+        ? nearestTranscriptTurns(turns, source.quote)
         : [];
       if (evidence.content !== undefined && content === null) {
         if (candidateTurns.length) {
@@ -236,7 +275,9 @@ export function validateBriefEvidence(
             `${group.label} quote occurs in ${source.source_id} transcript turn${candidateTurns.length === 1 ? "" : "s"} ${candidateTurns.join(", ")}, not cited turn ${source.turn}`,
           );
         } else {
-          errors.push(`${group.label} cites turn ${source.turn} that is absent from ${source.source_id}`);
+          errors.push(
+            `${group.label} cites turn ${source.turn} that is absent from ${source.source_id}${nearestTurnDiagnostic(nearestTurns)}`,
+          );
         }
       } else if (content !== null && !quoteOccursIn(content, source.quote)) {
         if (candidateTurns.length) {
@@ -244,7 +285,9 @@ export function validateBriefEvidence(
             `${group.label} quote occurs in ${source.source_id} transcript turn${candidateTurns.length === 1 ? "" : "s"} ${candidateTurns.join(", ")}, not cited turn ${source.turn}`,
           );
         } else {
-          errors.push(`${group.label} quote does not occur in ${source.source_id}${source.turn ? ` turn ${source.turn}` : ""}`);
+          errors.push(
+            `${group.label} quote does not occur in ${source.source_id}${source.turn ? ` turn ${source.turn}` : ""}${nearestTurnDiagnostic(nearestTurns)}`,
+          );
         }
       }
     }

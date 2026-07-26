@@ -251,7 +251,9 @@ cost because model pricing and billing semantics are external and time-dependent
   corrected only when the same quote identifies exactly one turn in that snapshot. The raw compiler
   output remains in `attempts/compile/NNN/output.json`, and corrections are recorded separately in
   `citation-turn-corrections.json`; ambiguous or absent quotes still fail validation. Approval stays
-  strict about the canonical turn. This is referential integrity, not proof that the quote
+  strict about the canonical turn. Rejection diagnostics list exact candidate turns, or for a
+  non-verbatim transcript quote, up to three turns with at least 50% longest-contiguous overlap.
+  Approximate candidates are diagnostic only and never satisfy validation. This is referential integrity, not proof that the quote
   semantically supports the claim; Claude owns that review.
 - Every MUST requires rationale, failure mode, and collected evidence.
 - Approval v3 covers `brief.json`, `brief.md`, `evidence-bundle.json`, and `evidence.md`; verification

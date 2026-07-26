@@ -116,7 +116,9 @@ compile 時に引用語句が指定 turn にはなく、同じ transcript snapsh
 実在する場合は、その turn を canonical Brief へ自動補正する。生の model output は attempt 配下に
 保持し、補正前後は `citation-turn-corrections.json` と run metric に記録する。同一引用が複数 turn に
 ある場合は意味上の帰属を推測せず、候補 turn を示して reject する。全文に存在しない引用も従来どおり
-reject する。approve 時には自動補正を行わず canonical Brief を厳密に再検証するため、レビュー後の
+reject する。非 verbatim 引用の診断時は最長連続一致率が 50% 以上の turn を最大 3 件表示するが、
+これは修正箇所を探すための情報に限定し、validation の合格や自動補正には使わない。approve 時には
+自動補正を行わず canonical Brief を厳密に再検証するため、レビュー後の
 誤編集を黙って修復することはない。
 
 通常の text turn 番号は安定させたまま、構造的に対応を確認できる `AskUserQuestion` と user answer

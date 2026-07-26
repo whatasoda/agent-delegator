@@ -222,6 +222,28 @@ approve the brief
     );
   });
 
+  test("suggests nearest transcript turns without accepting a non-verbatim quote", () => {
+    const draft = brief();
+    draft.decisions[0]!.sources[0]!.turn = 10;
+    draft.decisions[0]!.sources[0]!.quote = "keep design authority with Claude and review the brief";
+    const content = `<transcript-turn number="10" source-line="100" role="assistant">
+unrelated implementation detail
+</transcript-turn>
+<transcript-turn number="12" source-line="120" role="assistant">
+keep design authority with Claude and approve the brief
+</transcript-turn>`;
+    const sources = new Map([
+      ["source-001", { kind: "transcript" as const, revision: "turns:1-20", content }],
+    ]);
+
+    const repaired = repairBriefCitationTurns(draft, sources);
+    expect(repaired.corrections).toEqual([]);
+    const errors = validateBriefEvidence(repaired.brief, sources);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("quote does not occur in source-001 turn 10");
+    expect(errors[0]).toContain("nearest transcript turn by contiguous overlap: 12");
+  });
+
   test("accepts a null-turn citation to a structured transcript decision", () => {
     const draft = brief();
     draft.decisions[0]!.sources[0] = {
