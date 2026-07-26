@@ -406,7 +406,14 @@ async function delegatorIdentity(): Promise<{
   revision: string | null;
   dirty: boolean | null;
   worktreeFingerprint: string | null;
+  artifactSha256: string | null;
 }> {
+  let artifactSha256: string | null = null;
+  try {
+    artifactSha256 = await sha256File(fileURLToPath(import.meta.url));
+  } catch {
+    // The package version and checkout identity remain useful when the executable cannot hash itself.
+  }
   try {
     const checkoutRoot = await repositoryRoot(packageRoot);
     return {
@@ -414,9 +421,16 @@ async function delegatorIdentity(): Promise<{
       revision: await gitValue(packageRoot, "rev-parse", "HEAD"),
       dirty: Boolean(await gitValue(packageRoot, "status", "--porcelain", "--", ".")),
       worktreeFingerprint: await worktreeFingerprint(checkoutRoot),
+      artifactSha256,
     };
   } catch {
-    return { version: packageJson.version, revision: null, dirty: null, worktreeFingerprint: null };
+    return {
+      version: packageJson.version,
+      revision: null,
+      dirty: null,
+      worktreeFingerprint: null,
+      artifactSha256,
+    };
   }
 }
 
@@ -436,6 +450,7 @@ async function writeAttemptMetadata(
       revision: tool.revision,
       dirty: tool.dirty,
       checkout_worktree_fingerprint: tool.worktreeFingerprint,
+      artifact_sha256: tool.artifactSha256,
     },
   });
 }

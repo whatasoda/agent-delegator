@@ -295,6 +295,7 @@ describe("agent-delegator CLI", () => {
       expect(metadata.tool.version).toBe("0.0.0");
       expect(metadata.tool.revision).toMatch(/^[a-f0-9]{40}$/);
       expect(metadata.tool.checkout_worktree_fingerprint).toMatch(/^[a-f0-9]{64}$/);
+      expect(metadata.tool.artifact_sha256).toMatch(/^[a-f0-9]{64}$/);
     }
     expect(await readFile(join(runDir, "brief.generated.json"), "utf8")).toBe(
       await readFile(join(runDir, "brief.approved.json"), "utf8"),

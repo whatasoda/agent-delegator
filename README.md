@@ -13,7 +13,9 @@ For a zero-edit prompt that derives each target from the current Claude session,
 [`examples/claude-validation-prompt.md`](./examples/claude-validation-prompt.md).
 
 The rationale behind the architecture, settled trade-offs, gap to the intended end state, and
-roadmap are maintained in [`docs/DESIGN_AND_ROADMAP.md`](./docs/DESIGN_AND_ROADMAP.md).
+roadmap are maintained in [`docs/DESIGN_AND_ROADMAP.md`](./docs/DESIGN_AND_ROADMAP.md). The staged
+core-package, Claude-plugin, and standalone release plan is in
+[`docs/DISTRIBUTION.md`](./docs/DISTRIBUTION.md).
 
 ## Pipeline
 
@@ -177,7 +179,8 @@ Important files:
 - `attempts/<stage>/<attempt>/` — per-attempt prompts, raw structured output, Codex events, stderr,
   and post-attempt worktree checkpoints for compile, implement, and resume. Every Codex attempt also
   records `attempt-metadata.json` with the tool package version, Git revision, dirty state, and a
-  checkout worktree fingerprint captured before invocation.
+  checkout worktree fingerprint captured before invocation. It also hashes the running source or
+  bundled CLI artifact, so an installed package remains identifiable when no Git checkout exists.
 - `run-events.jsonl` — validated, append-only lifecycle events with timing, failure category,
   artifacts, metrics, model, and token usage when Codex emits it.
 - `result.json` — latest canonical implementer result.

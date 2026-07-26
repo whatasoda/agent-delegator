@@ -174,6 +174,8 @@ task-specific な選択は Context Request、長期的な project routing は pr
 
 prototype は `tools/agent-delegator/` に置き、application package への依存を持たせない。実利用と
 評価を先に行い、interface が安定してから独立 package/plugin として切り出す。
+具体的な package 境界、release gate、Claude plugin、standalone executable の順序は
+[`DISTRIBUTION.md`](./DISTRIBUTION.md) に固定する。
 
 ### 4.11 現在の runtime boundary
 
@@ -189,6 +191,7 @@ trial の品質を判断するには、Codex の自己申告や test pass だけ
 versioned `run-events.jsonl` に残す。run 開始時の tool identity に加え、各 Codex attempt の起動前に
 tool version、revision、dirty state、checkout worktree fingerprint を `attempt-metadata.json` へ固定し、
 dirty checkout 上で validator や prompt を改修しながら再試行した場合も attempt と実装版を対応づける。
+Git metadata を持たない package install では、実行中の source/bundle SHA-256 を識別子として残す。
 compiler の生出力、Claude 承認後 Brief、承認時 worktree、各
 implement/resume 後 worktree も別 artifact として保持する。
 
