@@ -6,6 +6,11 @@ an independent package.
 
 For independent verification from Claude Code, follow
 [`CLAUDE_ACCEPTANCE_HANDOFF.md`](./CLAUDE_ACCEPTANCE_HANDOFF.md).
+For portability trials across multiple real repositories, follow
+[`CLAUDE_CROSS_REPOSITORY_VALIDATION_HANDOFF.md`](./CLAUDE_CROSS_REPOSITORY_VALIDATION_HANDOFF.md)
+after the single-repository trust-boundary acceptance is current.
+For a zero-edit prompt that derives each target from the current Claude session, use
+[`examples/claude-validation-prompt.md`](./examples/claude-validation-prompt.md).
 
 The rationale behind the architecture, settled trade-offs, gap to the intended end state, and
 roadmap are maintained in [`docs/DESIGN_AND_ROADMAP.md`](./docs/DESIGN_AND_ROADMAP.md).

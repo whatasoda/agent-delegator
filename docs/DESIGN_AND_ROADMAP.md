@@ -220,6 +220,9 @@ Stage 1 の意図は「自動で最適な context を探すこと」ではなく
 - extraction quality の fixture corpus を作り始める。
 - 実 task の終了時に Claude evaluation を記録し、task type/complexity ごとの母数を蓄積する。
 - token coverage と評価 rubric のばらつきを観測し、比較に使える条件を決める。
+- 少なくとも2つの実 repository（うち1つは異なる言語/build system）で
+  `CLAUDE_CROSS_REPOSITORY_VALIDATION_HANDOFF.md` を実行し、project-policy portability、
+  Context Request authoring friction、cross-run比較の不足を記録する。
 
 ### Next — source adapter と選択支援
 

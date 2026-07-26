@@ -10,6 +10,10 @@ Claude is the acceptance owner. Do not accept the implementation solely because 
 its tests passed: inspect the implementation, reproduce the important behavior, and report your own
 verdict.
 
+This handoff validates the core trust boundary in one repository plus an isolated fixture. After it
+is current, use [`CLAUDE_CROSS_REPOSITORY_VALIDATION_HANDOFF.md`](./CLAUDE_CROSS_REPOSITORY_VALIDATION_HANDOFF.md)
+to validate portability and project-policy adaptation across real repositories.
+
 ## Intended behavior
 
 The workflow is:
