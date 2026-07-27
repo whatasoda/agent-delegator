@@ -96,6 +96,24 @@ describe("resolveClaudeTranscript", () => {
     expect(result.method).toBe("process-tree");
   });
 
+  test("encodes dots and underscores like Claude Code when locating project directories", async () => {
+    const config = await temporaryClaudeConfig();
+    const cwd = resolve("/tmp/dotted.project_name");
+    const projectDirectory = join(config, "projects", "-tmp-dotted-project-name");
+    await mkdir(projectDirectory, { recursive: true });
+    const transcript = join(projectDirectory, "latest.jsonl");
+    await writeFile(transcript, "{}\n");
+
+    await expect(
+      resolveClaudeTranscript({
+        cwd,
+        claudeConfigDir: config,
+        startPid: 999_999,
+        allowLatestFallback: true,
+      }),
+    ).resolves.toMatchObject({ path: transcript, method: "latest-for-cwd" });
+  });
+
   test("uses newest-transcript fallback only when explicitly enabled", async () => {
     const config = await temporaryClaudeConfig();
     const cwd = resolve("/tmp/fallback-project");

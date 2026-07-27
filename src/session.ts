@@ -54,7 +54,9 @@ async function readJson<T>(path: string): Promise<T | null> {
 }
 
 function projectDirectoryName(cwd: string): string {
-  return resolve(cwd).replaceAll("/", "-");
+  // Claude Code folds every non-alphanumeric character to "-" (verified: /Users/x/.claude ->
+  // -Users-x--claude, sup_pjsys -> sup-pjsys), not just the path separators.
+  return resolve(cwd).replace(/[^A-Za-z0-9]/g, "-");
 }
 
 async function findInIndex(indexPath: string, sessionId: string): Promise<string | null> {
