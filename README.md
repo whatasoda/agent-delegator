@@ -355,6 +355,12 @@ abandoning the run. Retries are never automatic because a prior implementer may 
 files. The worktree gate compares against the last approved or checkpointed state, so a retry after
 a cleanly failed resume needs no override while unreviewed drift still refuses to run.
 
+A checkpoint-capture failure after Codex already produced a valid result — for example a watcher
+kept touching the worktree, or an untracked file exceeded the observation buffer — no longer
+converts the run to `failed`. The result and status are kept, the completion event and CLI output
+record the capture error, and because the last checkpointed fingerprint is then stale, the next
+execution requires `--allow-worktree-change` after reviewing the drift.
+
 `needs-decision` means Claude can answer one focused design/contract question. `blocked` means an
 operational obstacle rather than a missing design choice. A Resume Addendum may answer the previous
 focused question only. If the answer changes a MUST, scope, acceptance criterion, or product

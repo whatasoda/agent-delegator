@@ -266,6 +266,28 @@ async function verifyApprovedInputs(
   }
 }
 
+// A checkpoint-capture failure after Codex already finished must not convert a valid result into a
+// failed run; the stale fingerprint keeps the worktree gate conservative until the drift is reviewed.
+async function captureCheckpointTolerantly(
+  repoRoot: string,
+  attemptDir: string,
+): Promise<
+  | (Awaited<ReturnType<typeof captureWorktreeCheckpoint>> & { error: null })
+  | { fingerprint: null; path: null; changedFileCount: null; patchBytes: null; error: string }
+> {
+  try {
+    return { ...(await captureWorktreeCheckpoint(repoRoot, attemptDir)), error: null };
+  } catch (error) {
+    return {
+      fingerprint: null,
+      path: null,
+      changedFileCount: null,
+      patchBytes: null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function verifyCollectionAnchor(runDir: string, state: RunState): Promise<void> {
   if (
     state.evidenceBundleSha256 &&
@@ -1007,11 +1029,13 @@ async function commandImplement(args: string[]): Promise<void> {
       throw new Error(`${validated.status} result cannot be resumed because Codex returned no thread ID`);
     }
     await writeJson(resultPath, validated);
-    const checkpoint = await captureWorktreeCheckpoint(state.repoRoot, implementAttemptDir);
+    const checkpoint = await captureCheckpointTolerantly(state.repoRoot, implementAttemptDir);
     state.status = validated.status;
     state.latestResult = resultPath;
-    state.lastWorktreeSha256 = checkpoint.fingerprint;
-    state.latestCheckpointPath = checkpoint.path;
+    if (checkpoint.error === null) {
+      state.lastWorktreeSha256 = checkpoint.fingerprint;
+      state.latestCheckpointPath = checkpoint.path;
+    }
     state.failure = null;
     state.failurePhase = null;
     state.activeOperation = null;
@@ -1019,17 +1043,24 @@ async function commandImplement(args: string[]): Promise<void> {
     await writeRunState(runDir, state);
     await appendRunEvent(runDir, {
       stage: "implement", event: "completed", attempt, duration_ms: Date.now() - implementStartedAt,
-      model, run_status: state.status, failure_category: null, message: validated.summary,
+      model, run_status: state.status, failure_category: null,
+      message: checkpoint.error === null
+        ? validated.summary
+        : `${validated.summary} [checkpoint capture failed: ${checkpoint.error}]`,
       usage: codexResult.usage,
       metrics: {
-        changed_file_count: checkpoint.changedFileCount, patch_bytes: checkpoint.patchBytes,
+        ...(checkpoint.error === null
+          ? { changed_file_count: checkpoint.changedFileCount, patch_bytes: checkpoint.patchBytes }
+          : {}),
         codex_invoked: true, exit_code: codexResult.exitCode,
       },
       artifacts: [
         `${attemptPrefix}/attempt-metadata.json`,
         `${attemptPrefix}/result.json`,
-        `${attemptPrefix}/checkpoint.json`,
-        `${attemptPrefix}/worktree.patch`, "result.json",
+        ...(checkpoint.error === null
+          ? [`${attemptPrefix}/checkpoint.json`, `${attemptPrefix}/worktree.patch`]
+          : []),
+        "result.json",
       ],
     });
     print({
@@ -1039,6 +1070,9 @@ async function commandImplement(args: string[]): Promise<void> {
       result: resultPath,
       implementation_session_id: state.implementationSessionId,
       attempt,
+      ...(checkpoint.error === null
+        ? {}
+        : { checkpoint_error: `${checkpoint.error}; the next execution will require --allow-worktree-change` }),
     });
   } catch (error) {
     state.status = "failed";
@@ -1164,11 +1198,13 @@ Continue the already approved implementation and return the structured result.`;
     if (errors.length) throw new Error(`Resumed implementer result failed validation: ${errors.join("; ")}`);
     const validated = payload as ImplementationResult;
     await writeJson(join(runDir, "result.json"), validated);
-    const checkpoint = await captureWorktreeCheckpoint(state.repoRoot, resumeAttemptDir);
+    const checkpoint = await captureCheckpointTolerantly(state.repoRoot, resumeAttemptDir);
     state.status = validated.status;
     state.latestResult = resultPath;
-    state.lastWorktreeSha256 = checkpoint.fingerprint;
-    state.latestCheckpointPath = checkpoint.path;
+    if (checkpoint.error === null) {
+      state.lastWorktreeSha256 = checkpoint.fingerprint;
+      state.latestCheckpointPath = checkpoint.path;
+    }
     state.failure = null;
     state.failurePhase = null;
     state.activeOperation = null;
@@ -1176,20 +1212,35 @@ Continue the already approved implementation and return the structured result.`;
     await writeRunState(runDir, state);
     await appendRunEvent(runDir, {
       stage: "resume", event: "completed", attempt, duration_ms: Date.now() - resumeStartedAt,
-      model, run_status: state.status, failure_category: null, message: validated.summary,
+      model, run_status: state.status, failure_category: null,
+      message: checkpoint.error === null
+        ? validated.summary
+        : `${validated.summary} [checkpoint capture failed: ${checkpoint.error}]`,
       usage: codexResult.usage,
       metrics: {
-        changed_file_count: checkpoint.changedFileCount, patch_bytes: checkpoint.patchBytes,
+        ...(checkpoint.error === null
+          ? { changed_file_count: checkpoint.changedFileCount, patch_bytes: checkpoint.patchBytes }
+          : {}),
         codex_invoked: true, exit_code: codexResult.exitCode,
       },
       artifacts: [
         `${attemptPrefix}/attempt-metadata.json`,
         `${attemptPrefix}/result.json`,
-        `${attemptPrefix}/checkpoint.json`,
-        `${attemptPrefix}/worktree.patch`, "result.json",
+        ...(checkpoint.error === null
+          ? [`${attemptPrefix}/checkpoint.json`, `${attemptPrefix}/worktree.patch`]
+          : []),
+        "result.json",
       ],
     });
-    print({ run_id: state.runId, run_dir: runDir, status: state.status, result: resultPath });
+    print({
+      run_id: state.runId,
+      run_dir: runDir,
+      status: state.status,
+      result: resultPath,
+      ...(checkpoint.error === null
+        ? {}
+        : { checkpoint_error: `${checkpoint.error}; the next execution will require --allow-worktree-change` }),
+    });
   } catch (error) {
     state.status = "failed";
     state.failure = error instanceof Error ? error.message : String(error);

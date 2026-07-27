@@ -111,7 +111,9 @@ implementer。`DESIGN_AND_ROADMAP.md` の「Later」項目は本サイクルの�
 - [x] P4-3: collection の全損性緩和。glob 展開・optional ソースのバイナリ/サイズ超過は exclusion
   記録（明示 required ファイルは従来どおり fatal）。クイックパスに `--max-source-bytes` /
   `--max-transcript-input-bytes` を追加し、上限エラーが対処法を案内。（2026-07-27 done）
-- [ ] P4-4: 実装成功後の checkpoint 失敗で成功が破棄される問題の分離。
+- [x] P4-4: 実装成功後の checkpoint 失敗で成功が破棄される問題の分離。有効な result と status を
+  保持し、capture エラーをイベント・CLI 出力に記録。stale fingerprint により次回実行は
+  `--allow-worktree-change` を要求（保守的なまま）。（2026-07-27 done）
 - [ ] P4-5: CLI 基本 UX（`--help` / `--version`、run 不在時のエラー、相対パス基準の統一）。
 
 ### Trial — 実業務リポジトリ検証

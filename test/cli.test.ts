@@ -647,6 +647,30 @@ describe("agent-delegator CLI", () => {
     expect(conflicting.stderr).toContain("Limit flags cannot be combined with --context");
   });
 
+  test("keeps a valid result when checkpoint capture fails after implementation", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    await run(
+      ["compile", "--objective", "Checkpoint failure check", "--transcript", transcript, "--runs-dir", runs, "--run-id", "checkpointless"],
+      repo,
+      env,
+    );
+    await run(["approve", "--run", "checkpointless", "--runs-dir", runs, "--allow-unresolved"], repo, env);
+    await writeFile(join(repo, "oversized.bin"), Buffer.alloc(65 * 1024 * 1024, 7));
+
+    const implementation = await run(
+      ["implement", "--run", "checkpointless", "--runs-dir", runs, "--allow-worktree-change"],
+      repo,
+      env,
+    );
+
+    expect(implementation.exitCode).toBe(0);
+    const output = JSON.parse(implementation.stdout);
+    expect(output.status).toBe("needs-decision");
+    expect(output.checkpoint_error).toContain("--allow-worktree-change");
+    const state = JSON.parse(await readFile(join(runs, "checkpointless", "state.json"), "utf8"));
+    expect(state.status).toBe("needs-decision");
+  });
+
   test("rechecks approval inputs and Git HEAD before resume", async () => {
     const { repo, runs, transcript, env, log } = await fixture();
     await run(
