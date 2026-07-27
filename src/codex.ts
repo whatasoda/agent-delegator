@@ -22,6 +22,7 @@ export async function runCodex(
     stderrPath?: string;
     timeoutMs?: number;
     killGraceMs?: number;
+    streamStderr?: boolean;
     command?: string;
   },
 ): Promise<CodexRunResult> {
@@ -68,7 +69,9 @@ export async function runCodex(
     }
   });
   child.stderr.on("data", (chunk: string) => {
-    process.stderr.write(chunk);
+    // Codex stderr is retained in stderr.log; live streaming is opt-in because the noise lands in
+    // the delegating agent's context on every call.
+    if (options.streamStderr) process.stderr.write(chunk);
     stderr?.write(chunk);
   });
   let spawnError: Error | null = null;

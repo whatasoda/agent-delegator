@@ -216,17 +216,17 @@ according to the repository's retention policy; this prototype does not prune th
 Worktree patches, evaluation notes, raw Codex events, and prompts can all be sensitive; publishing a
 report does not make its underlying run directory safe to share.
 
-Codex may print `Reading additional input from stdin...` on stderr even though the CLI supplies no
-stdin content; this is a harmless Codex diagnostic. Event streams may also contain intermediate
-agent messages. The schema-constrained object in `--output-last-message` is the canonical result,
-and the complete event stream remains diagnostic evidence.
-
-Some Codex CLI releases may also repeatedly log a `codex_models_manager` cache error mentioning a
-missing `supports_reasoning_summaries` field. It was observed with Codex CLI 0.144.5 without an
-execution failure. Treat it as known version-specific noise only when the Codex process still emits
-normal events and a valid result; otherwise retain and investigate it with the rest of `stderr.log`.
-The delegator deliberately does not filter this line, because a similar future error may accompany a
-real model-discovery failure.
+Codex stderr is not streamed to the controller's stderr by default; the complete stream is always
+retained in each attempt's `stderr.log`, and failure messages point at that file. Codex CLI
+diagnostics can be noisy — `Reading additional input from stdin...` despite no stdin content, or a
+repeated `codex_models_manager` cache error about a missing `supports_reasoning_summaries` field
+observed with Codex CLI 0.144.5 without an execution failure — and streaming that noise into the
+delegating agent's context on every call wastes its tokens. Set
+`AGENT_DELEGATOR_STREAM_CODEX_STDERR=1` to stream stderr live when debugging interactively. Nothing
+is filtered out of `stderr.log`, because a similar future error may accompany a real failure. Event
+streams may also contain intermediate agent messages. The schema-constrained object in
+`--output-last-message` is the canonical result, and the complete event stream remains diagnostic
+evidence.
 
 ## Observation workflow
 

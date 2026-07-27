@@ -220,6 +220,10 @@ async function resolveRun(args: string[], cwd: string): Promise<string> {
   return resolveRunDirectory(defaultRunsDir(repoRoot), required(args, "--run"));
 }
 
+function streamCodexStderr(): boolean {
+  return process.env.AGENT_DELEGATOR_STREAM_CODEX_STDERR === "1";
+}
+
 function timeoutMs(args: string[]): number {
   const configured = option(args, "--timeout-seconds") ?? process.env.AGENT_DELEGATOR_TIMEOUT_SECONDS ?? "1800";
   const seconds = Number.parseInt(configured, 10);
@@ -659,10 +663,11 @@ async function commandCompile(args: string[]): Promise<void> {
       eventsPath: join(compileAttemptDir, "events.jsonl"),
       stderrPath: join(compileAttemptDir, "stderr.log"),
       timeoutMs: timeoutMs(args),
+      streamStderr: streamCodexStderr(),
     });
     state.compilerSessionId = codexResult.threadId;
     if (codexResult.exitCode !== 0 || !(await exists(generatedPath))) {
-      throw new Error(`Brief compiler exited with code ${codexResult.exitCode}`);
+      throw new Error(`Brief compiler exited with code ${codexResult.exitCode}; inspect ${attemptPrefix}/stderr.log`);
     }
     await chmod(generatedPath, 0o600);
     const brief = await readJson<unknown>(generatedPath);
@@ -972,10 +977,11 @@ async function commandImplement(args: string[]): Promise<void> {
       eventsPath: join(implementAttemptDir, "events.jsonl"),
       stderrPath: join(implementAttemptDir, "stderr.log"),
       timeoutMs: timeoutMs(args),
+      streamStderr: streamCodexStderr(),
     });
     state.implementationSessionId = codexResult.threadId;
     if (codexResult.exitCode !== 0 || !(await exists(generatedResultPath))) {
-      throw new Error(`Implementer exited with code ${codexResult.exitCode}`);
+      throw new Error(`Implementer exited with code ${codexResult.exitCode}; inspect ${attemptPrefix}/stderr.log`);
     }
     await chmod(generatedResultPath, 0o600);
     const payload = await readJson<unknown>(generatedResultPath);
@@ -1132,9 +1138,10 @@ Continue the already approved implementation and return the structured result.`;
       eventsPath: join(resumeAttemptDir, "events.jsonl"),
       stderrPath: join(resumeAttemptDir, "stderr.log"),
       timeoutMs: timeoutMs(args),
+      streamStderr: streamCodexStderr(),
     });
     if (codexResult.exitCode !== 0 || !(await exists(resultPath))) {
-      throw new Error(`Resumed implementer exited with code ${codexResult.exitCode}`);
+      throw new Error(`Resumed implementer exited with code ${codexResult.exitCode}; inspect ${attemptPrefix}/stderr.log`);
     }
     await chmod(resultPath, 0o600);
     const payload = await readJson<unknown>(resultPath);

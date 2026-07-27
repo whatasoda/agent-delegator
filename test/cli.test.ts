@@ -117,6 +117,7 @@ const result = process.env.FAKE_CODEX_INVALID_RESULT === "1" ? { status: "comple
   remaining_risks: [],
   question: isResume ? "" : "What exact greeting should be used?"
 };
+process.stderr.write("fake codex stderr noise\\n");
 writeFileSync(output, JSON.stringify(isBrief ? brief : result));
 if (!(process.env.FAKE_CODEX_NO_IMPLEMENT_THREAD === "1" && !isBrief && !isResume)) {
   process.stdout.write(JSON.stringify({ type: "thread.started", thread_id: isResume ? "thread-resumed" : isBrief ? "thread-compiler" : "thread-implementer" }) + "\\n");
@@ -566,6 +567,28 @@ describe("agent-delegator CLI", () => {
     const restarted = await run(["implement", "--run", "stuck", "--runs-dir", runs, "--retry"], repo, env);
     expect(restarted.exitCode).toBe(0);
     expect(JSON.parse(restarted.stdout).status).toBe("needs-decision");
+  });
+
+  test("keeps Codex stderr out of the controller stream unless opted in", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    const suppressed = await run(
+      ["compile", "--objective", "Stderr check", "--transcript", transcript, "--runs-dir", runs, "--run-id", "stderr-default"],
+      repo,
+      env,
+    );
+    expect(suppressed.exitCode).toBe(0);
+    expect(suppressed.stderr).not.toContain("fake codex stderr noise");
+    expect(
+      await readFile(join(runs, "stderr-default", "attempts", "compile", "001", "stderr.log"), "utf8"),
+    ).toContain("fake codex stderr noise");
+
+    const streamed = await run(
+      ["compile", "--objective", "Stderr check", "--transcript", transcript, "--runs-dir", runs, "--run-id", "stderr-streamed"],
+      repo,
+      { ...env, AGENT_DELEGATOR_STREAM_CODEX_STDERR: "1" },
+    );
+    expect(streamed.exitCode).toBe(0);
+    expect(streamed.stderr).toContain("fake codex stderr noise");
   });
 
   test("rechecks approval inputs and Git HEAD before resume", async () => {

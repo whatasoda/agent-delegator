@@ -91,7 +91,9 @@ implementer。`DESIGN_AND_ROADMAP.md` の「Later」項目は本サイクルの�
 
 ### Phase 3 — トークン経済（従目的）
 
-- [ ] P3-1: Codex stderr パススルーの抑止/要約（`stderr.log` への保存は維持）。
+- [x] P3-1: Codex stderr パススルーの抑止/要約（`stderr.log` への保存は維持）。
+  既定でライブ転送を停止（`AGENT_DELEGATOR_STREAM_CODEX_STDERR=1` でオプトイン）、失敗
+  メッセージが `stderr.log` を指す。（2026-07-27 done）
 - [ ] P3-2: `report` に委譲元コストの代理指標（コマンド実行回数・stdout バイト・リトライ起因往復数）を追加。
 - [ ] P3-3: 長時間実行の見張りコスト削減（完了まで待つ実行モード等）。
 
