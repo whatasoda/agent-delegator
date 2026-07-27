@@ -138,6 +138,38 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
   指す。安定版リリース時に自然に移行する。（2026-07-27 done）
 - [ ] D-5: public marketplace 化＋thin plugin（operator skill の配布）。agent-extensions と同型。
 
+### Phase 5 — 監査残件（小粒。trial で実害が出たものから拾う）
+
+2026-07-27 の実利用調査で検出したが未修正の項目。優先度は trial での遭遇頻度で決める。
+
+- [ ] P5-1: monorepo 対応 — latest-fallback が repo-root cwd 固定で、サブディレクトリ起動の
+  Claude セッションを拾えない。`resolve-transcript --cwd` と `collect` の解決基準の不一致も統一。
+- [ ] P5-2: turn 番号の実用性 — isMeta なハーネス注入エントリが turn として数えられ、可視会話と
+  ズレる。番号を事前確認する手段（`resolve-transcript --turns` 等）もない。
+- [ ] P5-3: Codex preflight — 未インストールは raw な `spawn codex ENOENT`、イベント形式ドリフトは
+  無警告で resume/テレメトリを失う。バイナリパスも設定不可。最小バージョン方針とあわせて。
+- [ ] P5-4: `brief.md` の手編集が approve で無言破棄される（正は `brief.json`）。警告か案内を出す。
+- [ ] P5-5: forbidden-action lint の誤検知 — `deploy:check` 等のスクリプト名や 48 文字超の否定
+  文脈で正当な Brief が落ちる。
+- [ ] P5-6: 観測の整合 — resume retry で decision-ledger が重複／resume が新 thread id を保存
+  しない／torn `run-events.jsonl` 行で `status --observation` が死ぬ／`writeJsonAtomic` の
+  tmp 残骸掃除。
+- [ ] P5-7: 並行実行の安全性 — run/リポジトリ間ロックなし（衝突が「kept changing」等の分かり
+  にくいエラーになる）、`createRunDirectory` の TOCTOU。
+- [ ] P5-8: 大規模 worktree 耐性 — worktreeObservation の per-file 無制限 `Promise.all`、
+  64 MiB `maxBuffer` 超過時の raw エラー（ゲート時に対処案内なし）。
+- [ ] P5-9: CLI 入力の厳密化 — 数値オプションの `parseInt` が末尾ゴミを黙認
+  （`--timeout-seconds=60m` → 60 秒）、no-op の `--no-latest-fallback`、approve 系への `--cwd`、
+  `--transcript`＋`--session-id` の整合検証、evaluate スキーマエラーへの許容値一覧表示。
+- [ ] P5-10: 環境エッジ — `delegatorIdentity` が $HOME を git repo とする環境（yadm 等）で全走査、
+  legacy transcript の sidechain 行が turn に混入。
+- [ ] P5-11: ドキュメント整合 — README の pipeline 例が `bun run agent-delegator`（checkout 内
+  専用形式）のままで、インストール版の `agent-delegator` 形式と不整合。
+- [ ] P5-12: 運用ポリシー — run ディレクトリの prune コマンド／retention 方針、CI への macOS
+  runner 追加（検証済み表明と CI の乖離）、実 Codex を使う定期 acceptance の置き場所。
+- [ ] P5-13: prompts/implement.md が network-blocked sandbox での検証実行を要求し、ネットワーク
+  依存の検証が予見可能に `blocked` になる（Brief 側で検証の実行環境を明示する規約に）。
+
 ### Trial — 実業務リポジトリ検証
 
 - [ ] T-1: Phase 1〜2 完了後、対象リポジトリを選定し実タスク trial を開始する（開始時にオーナーと
