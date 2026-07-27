@@ -254,6 +254,31 @@ describe("evidence collection", () => {
     expect(await readdir(limitedRun)).not.toContain("evidence");
   });
 
+  test("records glob-matched binary or oversized files as exclusions instead of failing", async () => {
+    const { repo, runDir, transcript } = await fixture();
+    await mkdir(join(repo, "docs"), { recursive: true });
+    await writeFile(join(repo, "docs", "diagram.md"), Buffer.from([1, 0, 2]));
+    await writeFile(join(repo, "docs", "huge.md"), "x".repeat(4096));
+    await writeFile(join(repo, "docs", "usable.md"), "A small usable doc\n");
+    const request: ContextRequest = {
+      schema_version: "1",
+      objective: "Lenient glob",
+      project_profile: null,
+      profile_topics: [],
+      transcripts: [{ kind: "transcript", path: transcript }],
+      sources: [{ kind: "glob", pattern: "docs/*.md", role: "specification" }],
+      limits: { max_source_bytes: 2048 },
+    };
+
+    const { bundle } = await collectEvidence({ repoRoot: repo, runDir, request });
+
+    expect(bundle.excluded_sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ locator: "docs/diagram.md", reason: "Binary content" }),
+      expect.objectContaining({ locator: "docs/huge.md", reason: "Exceeds max_source_bytes (2048)" }),
+    ]));
+    expect(bundle.sources.some((source) => source.locator.endsWith("docs/usable.md"))).toBe(true);
+  });
+
   test("caps raw transcript input before reading it into memory", async () => {
     const { repo, runDir, transcript } = await fixture();
     const request: ContextRequest = {

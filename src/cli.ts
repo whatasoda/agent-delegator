@@ -81,6 +81,8 @@ const argumentSpecs: Record<string, ArgumentSpec> = {
       "--task-type",
       "--complexity",
       "--tags",
+      "--max-source-bytes",
+      "--max-transcript-input-bytes",
     ],
     flags: ["--allow-latest-fallback", "--no-redact", "--dry-run", "--retry"],
     textValues: ["--objective"],
@@ -102,6 +104,8 @@ const argumentSpecs: Record<string, ArgumentSpec> = {
       "--task-type",
       "--complexity",
       "--tags",
+      "--max-source-bytes",
+      "--max-transcript-input-bytes",
     ],
     flags: ["--allow-latest-fallback", "--no-redact"],
     textValues: ["--objective"],
@@ -354,6 +358,9 @@ async function commandResolveTranscript(args: string[]): Promise<void> {
 async function contextRequestFromArgs(args: string[], repoRoot: string): Promise<ContextRequest> {
   const contextPath = option(args, "--context");
   if (contextPath) {
+    if (option(args, "--max-source-bytes") || option(args, "--max-transcript-input-bytes")) {
+      throw new Error("Limit flags cannot be combined with --context; set limits in the Context Request");
+    }
     const value = await readJson<unknown>(resolve(repoRoot, contextPath));
     const errors = validateContextRequest(value);
     if (errors.length) throw new Error(errors.join("; "));
@@ -371,6 +378,11 @@ async function contextRequestFromArgs(args: string[], repoRoot: string): Promise
   }
 
   const objective = required(args, "--objective");
+  const limits: NonNullable<ContextRequest["limits"]> = {};
+  const maxSourceBytes = numberOption(args, "--max-source-bytes");
+  if (maxSourceBytes !== undefined) limits.max_source_bytes = maxSourceBytes;
+  const maxTranscriptInputBytes = numberOption(args, "--max-transcript-input-bytes");
+  if (maxTranscriptInputBytes !== undefined) limits.max_transcript_input_bytes = maxTranscriptInputBytes;
   const transcript: ContextRequest["transcripts"][number] = {
     kind: "transcript",
     role: "decision",
@@ -390,6 +402,7 @@ async function contextRequestFromArgs(args: string[], repoRoot: string): Promise
     profile_topics: [],
     transcripts: [transcript],
     sources: [],
+    ...(Object.keys(limits).length ? { limits } : {}),
   };
 }
 
@@ -581,6 +594,7 @@ async function commandCompile(args: string[]): Promise<void> {
     const sourceOptions = [
       "--objective", "--context", "--project-profile", "--run-id", "--transcript", "--session-id",
       "--from-turn", "--to-turn", "--task-type", "--complexity", "--tags",
+      "--max-source-bytes", "--max-transcript-input-bytes",
     ];
     if (sourceOptions.some((name) => option(args, name))) {
       throw new Error("compile --run cannot be combined with source collection options");

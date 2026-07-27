@@ -285,7 +285,7 @@ export async function collectEvidence(options: {
     }),
     ...options.request.sources,
   ];
-  const expandedSources: FileSourceRequest[] = [];
+  const expandedSources: (FileSourceRequest & { fromGlob?: boolean })[] = [];
   const excludedSources: { locator: string; reason: string }[] = [];
   for (const source of sourceRequests) {
     if (source.kind === "file") {
@@ -319,6 +319,7 @@ export async function collectEvidence(options: {
         role: source.role,
         required: source.required,
         selected_because: source.selected_because ?? `Matched project glob ${source.pattern}`,
+        fromGlob: true,
       })),
     );
   }
@@ -354,7 +355,9 @@ export async function collectEvidence(options: {
     firstTranscript ??= { path: resolved.path, sessionId: resolved.sessionId, method: resolved.method };
     const transcriptMetadata = await stat(resolved.path);
     if (transcriptMetadata.size > maxTranscriptInputBytes) {
-      throw new Error(`Transcript input exceeds max_transcript_input_bytes (${maxTranscriptInputBytes}): ${resolved.path}`);
+      throw new Error(
+        `Transcript input exceeds max_transcript_input_bytes (${maxTranscriptInputBytes}): ${resolved.path}; raise the limit (--max-transcript-input-bytes on the quick path) or select a bounded turn range`,
+      );
     }
     const transcriptDocument = await normalizeTranscriptDocumentFile(resolved.path, {
       fromTurn: transcript.from_turn,
@@ -409,15 +412,34 @@ export async function collectEvidence(options: {
     if (seenFiles.has(actual)) continue;
     seenFiles.add(actual);
     if (sources.length >= maxFiles) throw new Error(`Evidence selection exceeds max_files (${maxFiles})`);
+    // A glob is bulk selection: an unusable match (binary, oversized) becomes a recorded exclusion
+    // instead of aborting collection. Explicitly named required files stay fatal.
+    const lenient = source.fromGlob === true || !(source.required ?? true);
     const metadata = await stat(actual);
-    if (metadata.size > maxSourceBytes) throw new Error(`Evidence source exceeds max_source_bytes: ${source.path}`);
+    if (metadata.size > maxSourceBytes) {
+      if (!lenient) {
+        throw new Error(
+          `Evidence source exceeds max_source_bytes (${maxSourceBytes}): ${source.path}; raise the limit (--max-source-bytes on the quick path) or select a smaller source`,
+        );
+      }
+      excludedSources.push({ locator: source.path, reason: `Exceeds max_source_bytes (${maxSourceBytes})` });
+      continue;
+    }
     const raw = await readFile(actual);
-    if (raw.includes(0)) throw new Error(`Evidence source appears to be binary: ${source.path}`);
+    if (raw.includes(0)) {
+      if (!lenient) throw new Error(`Evidence source appears to be binary: ${source.path}`);
+      excludedSources.push({ locator: source.path, reason: "Binary content" });
+      continue;
+    }
     const content = fileSnapshot(
       relative(canonicalRepoRoot, actual),
       source.role ?? "context",
       options.redact === false ? raw.toString("utf8") : redactSecrets(raw.toString("utf8")),
     );
+    if (lenient && Buffer.byteLength(content, "utf8") > maxSourceBytes) {
+      excludedSources.push({ locator: source.path, reason: `Rendered snapshot exceeds max_source_bytes (${maxSourceBytes})` });
+      continue;
+    }
     const snapshotBytes = snapshotBytesWithinLimits(
       content,
       source.path,

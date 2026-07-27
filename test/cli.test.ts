@@ -625,6 +625,28 @@ describe("agent-delegator CLI", () => {
     expect(recoveredState.failurePhase).toBe("implement");
   });
 
+  test("quick-path limit flags feed the implicit Context Request", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    const capped = await run(
+      [
+        "compile", "--dry-run", "--objective", "Limit flags", "--transcript", transcript, "--runs-dir", runs,
+        "--run-id", "capped", "--max-transcript-input-bytes", "8",
+      ],
+      repo,
+      env,
+    );
+    expect(capped.exitCode).toBe(1);
+    expect(capped.stderr).toContain("max_transcript_input_bytes");
+
+    const conflicting = await run(
+      ["compile", "--context", "missing.json", "--max-source-bytes", "8", "--runs-dir", runs, "--dry-run"],
+      repo,
+      env,
+    );
+    expect(conflicting.exitCode).toBe(1);
+    expect(conflicting.stderr).toContain("Limit flags cannot be combined with --context");
+  });
+
   test("rechecks approval inputs and Git HEAD before resume", async () => {
     const { repo, runs, transcript, env, log } = await fixture();
     await run(

@@ -72,7 +72,10 @@ bun run agent-delegator compile \
 ```
 
 This creates an implicit Context Request containing the current transcript. If
-`agent-delegator.project.json` exists, its default sources are included automatically.
+`agent-delegator.project.json` exists, its default sources are included automatically. When a long
+session or a large source exceeds the default limits, raise them on the quick path with
+`--max-transcript-input-bytes` and `--max-source-bytes`; a Context Request file sets them in its
+`limits` block instead.
 
 For a task with multiple discussion threads, a selected turn range, or additional design sources,
 create a Context Request and separate collection from compilation:
@@ -266,8 +269,10 @@ cost because model pricing and billing semantics are external and time-dependent
 
 - Brief compilation runs in a read-only Codex sandbox.
 - Repository evidence paths and resolved symlinks must stay inside the repository root.
-- Collection bounds file count and source/aggregate byte sizes, rejects binary sources, redacts
-  credential-shaped strings, and records optional omissions.
+- Collection bounds file count and source/aggregate byte sizes, redacts credential-shaped strings,
+  and records omissions. An explicitly named required file that is binary or oversized fails
+  collection; glob-matched and optional sources are recorded as exclusions instead, so one PNG in a
+  documentation glob cannot abort the whole selection.
 - `max_source_bytes` bounds each rendered snapshot (and rejects an oversized raw repository file
   before reading it); `max_total_bytes` bounds the sum of rendered snapshots. Limits are checked
   before a snapshot is written.

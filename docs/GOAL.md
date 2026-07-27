@@ -108,8 +108,9 @@ implementer。`DESIGN_AND_ROADMAP.md` の「Later」項目は本サイクルの�
   追加、引用符値を末尾まで redact、bare 型注釈（`password: string` 等）は保持。（2026-07-27 done）
 - [x] P4-2: セッションディレクトリ名エンコードの Claude Code 実装準拠（非英数字→`-`）。
   （2026-07-27 done）
-- [ ] P4-3: collection の全損性緩和（optional ソースのバイナリ/サイズ超過は exclusion 記録に、
-  クイックパスからの limits 指定手段）。
+- [x] P4-3: collection の全損性緩和。glob 展開・optional ソースのバイナリ/サイズ超過は exclusion
+  記録（明示 required ファイルは従来どおり fatal）。クイックパスに `--max-source-bytes` /
+  `--max-transcript-input-bytes` を追加し、上限エラーが対処法を案内。（2026-07-27 done）
 - [ ] P4-4: 実装成功後の checkpoint 失敗で成功が破棄される問題の分離。
 - [ ] P4-5: CLI 基本 UX（`--help` / `--version`、run 不在時のエラー、相対パス基準の統一）。
 
