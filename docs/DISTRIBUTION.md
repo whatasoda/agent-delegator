@@ -16,35 +16,43 @@ runtime dependency of the core CLI.
 
 ## Current package boundary
 
-The package remains private and uses the prerelease identity
-`@whatasoda/agent-delegator@0.1.0-alpha.0`. Its packed artifact contains only:
+The package is MIT-licensed and uses the prerelease identity
+`@whatasoda/agent-delegator@0.1.0-alpha.0`, targeting the public npm `alpha` dist-tag
+(owner decision, 2026-07-27). Its packed artifact contains only:
 
-- the Bun bundle exposed as the `agent-delegator` executable;
+- the Node-compatible launcher and the Bun bundle exposed as the `agent-delegator` executable;
 - runtime compiler/implementer prompts and JSON Schemas;
-- examples, operator handoffs, README, and design documentation.
+- examples, operator handoffs, README, LICENSE, and design documentation.
 
 Source, tests, build scripts, historical acceptance reports, and repository-local runtime artifacts
 are excluded. `bun run package:smoke` builds a tarball, checks its allowlist, installs it into a
 temporary consumer without registry access, and completes a packaged compile with a fake Codex. The
 smoke also proves that installed attempts retain an executable SHA-256 when Git metadata is absent.
 
-Do not remove `private: true`, change `UNLICENSED`, or publish to a registry during private trials.
+Registry publishes happen only through the owner-triggered `Release (npm alpha)` workflow
+(`.github/workflows/release.yml`), which runs the full release gate and publishes with npm Trusted
+Publishing provenance; no npm token is stored, and the trusted publisher must be configured on
+npmjs.com once before the first run. Never publish from a working session or a local machine.
 
-## Phase 1: extracted private core package
+## Phase 1: extracted core package and the alpha channel
 
-The initial private-trial decisions are:
+The initial decisions are:
 
 - repository: `whatasoda/agent-delegator`;
 - package: `@whatasoda/agent-delegator@0.1.0-alpha.0`;
-- visibility: private repository and reviewed tarballs, with no registry publication;
-- license: `UNLICENSED` while private, with Apache-2.0 proposed for a later public release;
-- validated platform: macOS arm64 with Bun 1.3.13; other platforms remain unverified.
+- distribution: reviewed tarballs during trials, then the public npm `alpha` dist-tag — never
+  `latest` until the stability conditions in `DESIGN_AND_ROADMAP.md` §8 hold. Note that npm
+  publishes are permanent (no unpublish after 72 hours), so alpha versions are cheap to add but
+  impossible to retract;
+- license: MIT (owner decision 2026-07-27; supersedes the earlier `UNLICENSED`-while-private plan
+  and the Apache-2.0 proposal);
+- validated platform: macOS arm64 with Bun 1.3.13; other platforms remain unverified. The npm bin is
+  a Node-compatible launcher that reports the Bun requirement when Bun is absent.
 
-The history-preserving repository extraction is complete. Before registry publication:
+The history-preserving repository extraction is complete. Before each registry publication:
 
-1. Choose the public license and registry access policy.
-2. Keep the CLI bundle plus prompt/schema sidecars as the first distribution format.
-3. Run the complete release gate:
+1. Keep the CLI bundle plus prompt/schema sidecars as the distribution format.
+2. Run the complete release gate:
 
    ```sh
    bun install --frozen-lockfile
@@ -55,8 +63,8 @@ The history-preserving repository extraction is complete. Before registry public
    bun pm pack --dry-run
    ```
 
-4. Inspect the tarball manifest and publish only from a clean, tagged revision with an explicit
-   registry and access level.
+3. Inspect the tarball manifest and trigger the release workflow only from a clean, tagged
+   revision on `main`.
 
 During private trials, a reviewed tarball can be installed without publishing:
 

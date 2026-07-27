@@ -282,8 +282,15 @@ Stage 1 の意図は「自動で最適な context を探すこと」ではなく
 
 ## 8. public release / plugin へ進む条件
 
-core CLI の履歴付き独立 package 化は trial の再現性を優先して完了した。次を満たすまでは package を
-private / prerelease に保ち、public registry release や互換性を約束する Claude plugin へ進まない。
+core CLI の履歴付き独立 package 化は trial の再現性を優先して完了した。当初はここに挙げる条件を
+満たすまで package を private / `UNLICENSED` に保つ方針だったが、2026-07-27 のオーナー判断で
+「public 前提・MIT ライセンス」へ変更し、公開を2段階に分けた。
+
+- **alpha チャネル（npm dist-tag `alpha`）**: 下記条件の充足を待たずに公開できる。互換性は約束
+  しない（README の alpha compatibility statement が正）。publish はオーナーが起動する release
+  workflow（Trusted Publishing / provenance）経由のみ。npm の publish は撤回不能である点を前提に、
+  公開前に実 repository trial で schema の揺れを吸収することを推奨する。
+- **`latest` / 1.0、および互換性を約束する Claude plugin**: 従来どおり、次を満たすまで進まない。
 
 - 複数の実 task で Context Request と Evidence Bundle の schema が安定している。
 - 少なくとも2種類の project profile で routing が機能する。

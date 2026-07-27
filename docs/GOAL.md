@@ -128,8 +128,9 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
   `publishConfig: { access: public, tag: alpha }`、README の互換性表明）。（2026-07-27 done）
 - [x] D-2: node 互換 bin ラッパ（Bun 不在時に導線つきで即死、npm/npx ユーザーの意味不明な失敗を
   排除）。package-smoke が同梱と導線メッセージを検証。（2026-07-27 done）
-- [ ] D-3: owner トリガーの npm alpha release workflow（Trusted Publishing / provenance、
+- [x] D-3: owner トリガーの npm alpha release workflow（Trusted Publishing / provenance、
   リリースゲート組込み）と DISTRIBUTION.md / DESIGN_AND_ROADMAP §8 の方針改訂。
+  （2026-07-27 done）
 - [ ] D-4: 公開の実行 — オーナー操作（npmjs.com の Trusted Publisher 設定＋workflow 起動）。
   T-1 trial を 1〜2 本先行させ、schema の揺れを公開前に吸収することを推奨。
 - [ ] D-5: public marketplace 化＋thin plugin（operator skill の配布）。agent-extensions と同型。
