@@ -85,7 +85,9 @@ implementer。`DESIGN_AND_ROADMAP.md` の「Later」項目は本サイクルの�
 - [x] P2-4: stale な active state の強制回復（PID 再利用対策を含む）。
   `status --force-fail` が PID 再利用で生存に見える stuck run を明示的に failed へ変換し、
   retry 経路を開く。（2026-07-27 done）
-- [ ] P2-5: タイムアウトの SIGKILL エスカレーションと孤児 Codex プロセスの残留対策。
+- [x] P2-5: タイムアウトの SIGKILL エスカレーションと孤児 Codex プロセスの残留対策。
+  timeout / SIGINT / SIGTERM / SIGHUP（ターミナルクローズ）を process group へ転送し、猶予後に
+  SIGKILL。exit 後に stdio が塞がっても bounded wait で必ず復帰。（2026-07-27 done）
 
 ### Phase 3 — トークン経済（従目的）
 

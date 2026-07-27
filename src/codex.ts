@@ -16,7 +16,14 @@ export interface CodexUsage {
 
 export async function runCodex(
   args: string[],
-  options: { cwd: string; eventsPath: string; stderrPath?: string; timeoutMs?: number; command?: string },
+  options: {
+    cwd: string;
+    eventsPath: string;
+    stderrPath?: string;
+    timeoutMs?: number;
+    killGraceMs?: number;
+    command?: string;
+  },
 ): Promise<CodexRunResult> {
   const child = spawn(options.command ?? "codex", args, {
     cwd: options.cwd,
@@ -78,30 +85,55 @@ export async function runCodex(
     }
     child.kill(signal);
   };
+  // A Codex that traps the polite signal must not leave the controller waiting forever or a
+  // detached process editing the worktree; SIGKILL on the group cannot be trapped.
+  let killTimer: NodeJS.Timeout | null = null;
+  const escalate = (signal: NodeJS.Signals): void => {
+    terminate(signal);
+    killTimer ??= setTimeout(() => terminate("SIGKILL"), options.killGraceMs ?? 10_000);
+  };
   const forwardSignal = (signal: NodeJS.Signals): void => {
     interruptedSignal = signal;
-    terminate(signal);
+    escalate(signal);
   };
   const onSigint = (): void => forwardSignal("SIGINT");
   const onSigterm = (): void => forwardSignal("SIGTERM");
+  const onSighup = (): void => forwardSignal("SIGHUP");
   process.once("SIGINT", onSigint);
   process.once("SIGTERM", onSigterm);
+  process.once("SIGHUP", onSighup);
   const timeout = options.timeoutMs
     ? setTimeout(() => {
         timedOut = true;
-        terminate("SIGTERM");
+        escalate("SIGTERM");
       }, options.timeoutMs)
     : null;
   const exitCode = await new Promise<number>((resolvePromise) => {
+    let exitedCode: number | null = null;
+    let settled = false;
+    const settle = (code: number): void => {
+      if (settled) return;
+      settled = true;
+      resolvePromise(code);
+    };
     child.on("error", (error) => {
       spawnError = error;
-      resolvePromise(127);
+      settle(127);
     });
-    child.on("close", (code) => resolvePromise(code ?? 1));
+    child.on("exit", (code) => {
+      // close waits for stdio to drain; a grandchild holding the inherited pipe after the child
+      // died must not hang the controller.
+      exitedCode = code ?? 1;
+      const guard = setTimeout(() => settle(exitedCode ?? 1), 5_000);
+      guard.unref?.();
+    });
+    child.on("close", (code) => settle(code ?? exitedCode ?? 1));
   });
   if (timeout) clearTimeout(timeout);
+  if (killTimer) clearTimeout(killTimer);
   process.off("SIGINT", onSigint);
   process.off("SIGTERM", onSigterm);
+  process.off("SIGHUP", onSighup);
   events.end();
   stderr?.end();
   await Promise.all([once(events, "finish"), ...(stderr ? [once(stderr, "finish")] : [])]);

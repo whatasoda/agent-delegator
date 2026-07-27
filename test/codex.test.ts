@@ -84,6 +84,24 @@ describe("runCodex", () => {
     ).rejects.toThrow();
   });
 
+  test("escalates to SIGKILL when a timed-out process ignores SIGTERM", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "agent-delegator-codex-"));
+    temporaryDirectories.push(cwd);
+    const eventsPath = join(cwd, "events.jsonl");
+    const startedAt = Date.now();
+
+    await expect(
+      runCodex(["-c", "trap '' TERM; while :; do :; done"], {
+        cwd,
+        eventsPath,
+        timeoutMs: 50,
+        killGraceMs: 200,
+        command: "/bin/sh",
+      }),
+    ).rejects.toThrow("timeout");
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+  });
+
   test("persists stderr privately and terminates a timed-out invocation", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "agent-delegator-codex-"));
     temporaryDirectories.push(cwd);

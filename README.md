@@ -310,7 +310,10 @@ does not turn prompt instructions into an absolute external-mutation security bo
 ## Failure and resume operations
 
 Codex calls time out after 1800 seconds by default. Override this with `--timeout-seconds` or
-`AGENT_DELEGATOR_TIMEOUT_SECONDS`. Stderr and event streams are retained per attempt.
+`AGENT_DELEGATOR_TIMEOUT_SECONDS`. Stderr and event streams are retained per attempt. A timeout or
+a forwarded interrupt (SIGINT/SIGTERM/SIGHUP, including terminal close) first sends the polite
+signal to the Codex process group, then escalates to SIGKILL after a short grace period so an
+unresponsive Codex cannot hang the controller or keep editing the worktree unsupervised.
 
 The caller's foreground-command timeout is separate from the agent-delegator timeout. When Claude's
 shell tool cannot wait for the configured Codex duration, keep the controller alive with the shell
