@@ -101,7 +101,15 @@ export function resolveRunDirectory(runsDir: string, run: string): string {
 }
 
 export async function readRunState(runDir: string): Promise<RunState> {
-  const value = await readJson<unknown>(join(runDir, "state.json"));
+  let value: unknown;
+  try {
+    value = await readJson<unknown>(join(runDir, "state.json"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+      throw new Error(`Run not found: no state.json under ${runDir}; check --run and --runs-dir`);
+    }
+    throw error;
+  }
   if (!validateRunStateSchema(value)) {
     const details = (validateRunStateSchema.errors ?? [])
       .map((error) => `${error.instancePath || "/"} ${error.message ?? "is invalid"}`)

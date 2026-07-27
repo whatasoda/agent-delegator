@@ -377,13 +377,13 @@ async function commandResolveTranscript(args: string[]): Promise<void> {
   else process.stdout.write(`${resolved.path}\n`);
 }
 
-async function contextRequestFromArgs(args: string[], repoRoot: string): Promise<ContextRequest> {
+async function contextRequestFromArgs(args: string[]): Promise<ContextRequest> {
   const contextPath = option(args, "--context");
   if (contextPath) {
     if (option(args, "--max-source-bytes") || option(args, "--max-transcript-input-bytes")) {
       throw new Error("Limit flags cannot be combined with --context; set limits in the Context Request");
     }
-    const value = await readJson<unknown>(resolve(repoRoot, contextPath));
+    const value = await readJson<unknown>(resolve(contextPath));
     const errors = validateContextRequest(value);
     if (errors.length) throw new Error(errors.join("; "));
     const request = structuredClone(value as ContextRequest);
@@ -501,7 +501,7 @@ async function prepareRun(args: string[]): Promise<{ runDir: string; state: RunS
   const collectStartedAt = Date.now();
   const cwd = resolve(option(args, "--cwd") ?? process.cwd());
   const repoRoot = await repositoryRoot(cwd);
-  const request = await contextRequestFromArgs(args, repoRoot);
+  const request = await contextRequestFromArgs(args);
   const runsDir = resolve(option(args, "--runs-dir") ?? defaultRunsDir(repoRoot));
   const runId = option(args, "--run-id") ?? makeRunId();
   const runDir = await createRunDirectory(runsDir, runId);
@@ -1392,6 +1392,9 @@ function usage(): string {
   agent-delegator wait --run <id-or-path> [--timeout-seconds <n>]
   agent-delegator evaluate --run <id-or-path> --evaluation <path>
   agent-delegator report [--runs-dir <dir>] [--format markdown|json]
+  agent-delegator --version
+
+Any command also accepts --help to print this usage.
 
 Common options:
   --transcript <path>       Use an explicit Claude transcript
@@ -1408,11 +1411,26 @@ Common options:
   --task-type <type>        Classify a run for comparison (feature, bugfix, tooling, ...)
   --complexity <size>       Classify a run as small, medium, large, or unknown
   --tags <a,b>              Add comma-separated project-specific observation tags
+  --run-id <id>             Choose the new run's directory name at collect time
+  --from-turn <n> / --to-turn <n>  Bound the transcript selection to an inclusive turn range
+  --max-source-bytes <n>    Raise the per-source snapshot limit on the quick path
+  --max-transcript-input-bytes <n>  Raise the raw transcript input cap on the quick path
+  --no-redact               Disable credential redaction for the whole run
+  --dry-run                 Collect and prepare without calling Codex
+  --force-fail              Convert a stuck active run to failed after manual verification
 `;
 }
 
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
+  if (command === "--version" || command === "-v" || command === "version") {
+    process.stdout.write(`${packageJson.version}\n`);
+    return;
+  }
+  if (args.includes("--help") || args.includes("-h")) {
+    process.stdout.write(usage());
+    return;
+  }
   if (command) validateArguments(command, args);
   switch (command) {
     case "resolve-transcript":

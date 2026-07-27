@@ -671,6 +671,22 @@ describe("agent-delegator CLI", () => {
     expect(state.status).toBe("needs-decision");
   });
 
+  test("supports --help and --version and names a missing run clearly", async () => {
+    const { repo, runs, env } = await fixture();
+
+    const version = await run(["--version"], repo, env);
+    expect(version.exitCode).toBe(0);
+    expect(version.stdout.trim()).toBe(packageJson.version);
+
+    const help = await run(["compile", "--help"], repo, env);
+    expect(help.exitCode).toBe(0);
+    expect(help.stdout).toContain("Usage:");
+
+    const missing = await run(["status", "--run", "no-such-run", "--runs-dir", runs], repo, env);
+    expect(missing.exitCode).toBe(1);
+    expect(missing.stderr).toContain("Run not found");
+  });
+
   test("rechecks approval inputs and Git HEAD before resume", async () => {
     const { repo, runs, transcript, env, log } = await fixture();
     await run(

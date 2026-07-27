@@ -114,7 +114,9 @@ implementer。`DESIGN_AND_ROADMAP.md` の「Later」項目は本サイクルの�
 - [x] P4-4: 実装成功後の checkpoint 失敗で成功が破棄される問題の分離。有効な result と status を
   保持し、capture エラーをイベント・CLI 出力に記録。stale fingerprint により次回実行は
   `--allow-worktree-change` を要求（保守的なまま）。（2026-07-27 done）
-- [ ] P4-5: CLI 基本 UX（`--help` / `--version`、run 不在時のエラー、相対パス基準の統一）。
+- [x] P4-5: CLI 基本 UX。全コマンドで `--help`（exit 0）、`--version` 追加、run 不在は
+  「Run not found」で案内、`--context` の相対パス基準を他オプションと同じ shell cwd に統一、
+  usage に未記載オプションを補完。（2026-07-27 done）
 
 ### Trial — 実業務リポジトリ検証
 
