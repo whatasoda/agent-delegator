@@ -501,6 +501,38 @@ describe("agent-delegator CLI", () => {
     expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(1);
   });
 
+  test("restarts implementation from the approved Brief after a failed resume", async () => {
+    const { repo, runs, transcript, env, log } = await fixture();
+    await run(
+      ["compile", "--objective", "Resume loss check", "--transcript", transcript, "--runs-dir", runs, "--run-id", "resume-loss"],
+      repo,
+      env,
+    );
+    await run(["approve", "--run", "resume-loss", "--runs-dir", runs, "--allow-unresolved"], repo, env);
+    const first = await run(["implement", "--run", "resume-loss", "--runs-dir", runs], repo, env);
+    expect(JSON.parse(first.stdout).status).toBe("needs-decision");
+
+    const failedResume = await run(
+      ["resume", "--run", "resume-loss", "--runs-dir", runs, "--message=Use the fixture greeting."],
+      repo,
+      { ...env, FAKE_CODEX_INVALID_RESULT: "1" },
+    );
+    expect(failedResume.exitCode).toBe(1);
+
+    const withoutRetry = await run(["implement", "--run", "resume-loss", "--runs-dir", runs], repo, env);
+    expect(withoutRetry.exitCode).toBe(1);
+    expect(withoutRetry.stderr).toContain("pass --retry after reviewing the worktree");
+
+    const restarted = await run(
+      ["implement", "--run", "resume-loss", "--runs-dir", runs, "--retry"],
+      repo,
+      env,
+    );
+    expect(restarted.exitCode).toBe(0);
+    expect(JSON.parse(restarted.stdout).status).toBe("needs-decision");
+    expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(4);
+  });
+
   test("rechecks approval inputs and Git HEAD before resume", async () => {
     const { repo, runs, transcript, env, log } = await fixture();
     await run(

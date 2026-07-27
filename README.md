@@ -326,8 +326,12 @@ deterministic citation repairs without a Codex call, and returns the run to `com
 edited Brief passes. Validation is never relaxed by this path; it only removes the cost of paying
 for another compiler call to fix what Claude already knows how to correct. A failed
 workspace-write call requires `implement --retry` or `resume --retry`; inspect the repository first,
-and add `--allow-worktree-change` only when the partial diff is understood. Retries are never
-automatic because a prior implementer may already have changed files.
+and add `--allow-worktree-change` only when the partial diff is understood. When a resume can no
+longer reach its Codex thread (for example the Codex session store was pruned), `implement --retry`
+starts a fresh implementation attempt from the same approved Brief in a new Codex session instead of
+abandoning the run. Retries are never automatic because a prior implementer may already have changed
+files. The worktree gate compares against the last approved or checkpointed state, so a retry after
+a cleanly failed resume needs no override while unreviewed drift still refuses to run.
 
 `needs-decision` means Claude can answer one focused design/contract question. `blocked` means an
 operational obstacle rather than a missing design choice. A Resume Addendum may answer the previous

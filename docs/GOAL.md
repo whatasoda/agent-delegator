@@ -78,7 +78,10 @@ implementer。`DESIGN_AND_ROADMAP.md` の「Later」項目は本サイクルの�
 - [x] P2-2: Claude が手修正した `brief.json` を Codex 再実行なしで再検証・再 compiled 化する経路。
   `revalidate --run <id>` が raw compiler output からの seed・完全再検証・決定的 repair を行い、
   通れば `compiled` へ戻す。検証自体は一切緩めない。（2026-07-27 done）
-- [ ] P2-3: resume thread 喪失時に approved Brief から実装をやり直せる経路。
+- [x] P2-3: resume thread 喪失時に approved Brief から実装をやり直せる経路。
+  `implement --retry` が failed resume からも新セッションで再実装できる。worktree 照合は
+  「最後に approve/checkpoint した状態」基準になり、クリーンな失敗後はフラグ不要。
+  （2026-07-27 done）
 - [ ] P2-4: stale な active state の強制回復（PID 再利用対策を含む）。
 - [ ] P2-5: タイムアウトの SIGKILL エスカレーションと孤児 Codex プロセスの残留対策。
 

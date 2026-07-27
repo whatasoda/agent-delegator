@@ -917,13 +917,15 @@ async function commandApprove(args: string[]): Promise<void> {
 async function commandImplement(args: string[]): Promise<void> {
   const runDir = await resolveRun(args, process.cwd());
   const state = await readRunState(runDir);
-  const retryable = state.status === "failed" && state.failurePhase === "implement" && flag(args, "--retry");
+  const retryable = state.status === "failed" &&
+    (state.failurePhase === "implement" || state.failurePhase === "resume") &&
+    flag(args, "--retry");
   if (state.status !== "approved" && !retryable) {
-    throw new Error(`Run must be approved before implementation${state.failurePhase === "implement" ? " (pass --retry after reviewing the worktree)" : ""}; current status is ${state.status}`);
+    throw new Error(`Run must be approved before implementation${state.failurePhase === "implement" || state.failurePhase === "resume" ? " (pass --retry after reviewing the worktree)" : ""}; current status is ${state.status}`);
   }
-  if (flag(args, "--retry") && !retryable) throw new Error("implement --retry requires a failed implementation attempt");
+  if (flag(args, "--retry") && !retryable) throw new Error("implement --retry requires a failed implementation or resume attempt");
   await observeGuardedOperation(runDir, state, "implement", (state.attempts?.implement ?? 0) + 1, async () => {
-    await verifyApprovedInputs(runDir, state, args, null);
+    await verifyApprovedInputs(runDir, state, args, state.lastWorktreeSha256 ?? null);
   });
   const model = option(args, "--model") ?? state.implementationModel ?? process.env.AGENT_DELEGATOR_IMPLEMENT_MODEL ?? null;
   const resultPath = join(runDir, "result.json");
