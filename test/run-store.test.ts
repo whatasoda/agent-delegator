@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
+import { worktreeFingerprint } from "../src/repository.js";
 import { createRunDirectory, readRunState } from "../src/run-store.js";
+
+const execFileAsync = promisify(execFile);
 
 const temporaryDirectories: string[] = [];
 
@@ -24,6 +29,50 @@ describe("run store", () => {
     temporaryDirectories.push(root);
     const runDir = await createRunDirectory(join(root, "runs"), "safe-run");
     expect((await stat(runDir)).mode & 0o777).toBe(0o700);
+  });
+
+  test("writes a gitignore that keeps run artifacts untracked", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-delegator-runs-"));
+    temporaryDirectories.push(root);
+    const runsDir = join(root, "runs");
+    await createRunDirectory(runsDir, "first-run");
+    expect(await readFile(join(runsDir, ".gitignore"), "utf8")).toBe("*\n");
+  });
+
+  test("does not clobber an existing runs-directory gitignore", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-delegator-runs-"));
+    temporaryDirectories.push(root);
+    const runsDir = join(root, "runs");
+    await createRunDirectory(runsDir, "first-run");
+    await writeFile(join(runsDir, ".gitignore"), "custom\n");
+    await createRunDirectory(runsDir, "second-run");
+    expect(await readFile(join(runsDir, ".gitignore"), "utf8")).toBe("custom\n");
+  });
+
+  test("run artifacts stay outside the worktree fingerprint of a target repository", async () => {
+    const repo = await mkdtemp(join(tmpdir(), "agent-delegator-target-"));
+    temporaryDirectories.push(repo);
+    await execFileAsync("git", ["init"], { cwd: repo });
+    await writeFile(join(repo, "README.md"), "seed\n");
+    await execFileAsync("git", ["add", "."], { cwd: repo });
+    await execFileAsync(
+      "git",
+      ["-c", "user.email=test@example.com", "-c", "user.name=test", "commit", "-m", "seed"],
+      { cwd: repo },
+    );
+    const cleanFingerprint = await worktreeFingerprint(repo);
+
+    const runDir = await createRunDirectory(join(repo, ".agent-delegator", "runs"), "target-run");
+    await writeFile(join(runDir, "state.json"), "{}\n");
+    await writeFile(join(runDir, "approval.json"), "{}\n");
+
+    expect(await worktreeFingerprint(repo)).toBe(cleanFingerprint);
+    const { stdout } = await execFileAsync(
+      "git",
+      ["ls-files", "--others", "--exclude-standard"],
+      { cwd: repo },
+    );
+    expect(stdout.trim()).toBe("");
   });
 
   test("rejects malformed lifecycle state", async () => {

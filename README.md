@@ -176,7 +176,9 @@ events without consuming turn numbers. Common credential-shaped strings are reda
 
 ## Run files
 
-Runs are stored under `.agent-delegator/runs/<run-id>/` and ignored by Git.
+Runs are stored under `.agent-delegator/runs/<run-id>/`. The CLI writes a `.gitignore` (`*`) into
+the runs directory when it creates a run, so run artifacts stay untracked in any target repository
+and never enter the approval worktree fingerprint or checkpoint patches.
 
 Important files:
 

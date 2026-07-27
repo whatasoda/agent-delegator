@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { access, chmod, mkdir } from "node:fs/promises";
+import { access, chmod, mkdir, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import stateSchema from "../schemas/state.schema.json";
@@ -82,7 +82,18 @@ export async function createRunDirectory(runsDir: string, runId: string): Promis
   }
   await mkdir(runDir, { recursive: true, mode: 0o700 });
   await chmod(runDir, 0o700);
+  await ensureRunsRootIgnored(root);
   return runDir;
+}
+
+// Run artifacts must stay untracked in the target repository; otherwise every approve/implement
+// write enters the worktree fingerprint and invalidates the approval gate it protects.
+async function ensureRunsRootIgnored(root: string): Promise<void> {
+  try {
+    await writeFile(join(root, ".gitignore"), "*\n", { encoding: "utf8", mode: 0o600, flag: "wx" });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") throw error;
+  }
 }
 
 export function resolveRunDirectory(runsDir: string, run: string): string {
