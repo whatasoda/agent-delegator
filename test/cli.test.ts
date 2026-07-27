@@ -500,6 +500,12 @@ describe("agent-delegator CLI", () => {
     expect(approved.exitCode).toBe(0);
     expect(JSON.parse(approved.stdout).status).toBe("approved");
     expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(1);
+
+    const observed = await run(["status", "--run", "revalidate", "--runs-dir", runs, "--observation"], repo, env);
+    const cost = JSON.parse(observed.stdout).observation.controller_cost;
+    expect(cost.codex_failures).toBe(1);
+    expect(cost.gate_rejections).toBe(1);
+    expect(cost.review_surface_bytes.brief_md).toBeGreaterThan(0);
   });
 
   test("restarts implementation from the approved Brief after a failed resume", async () => {

@@ -248,7 +248,12 @@ assessment records outcome, Brief/implementation/communication quality, verifica
 `report` scans all run directories and emits a versioned JSON dataset or a Markdown summary. It
 includes acceptance, accepted-as-is, failures, needs-decision/blocked counts, Brief edit rate,
 task/complexity/model/tool-revision/outcome breakdowns, average ratings and stage durations, source volume, token
-totals, and token-telemetry coverage. Old runs without observation events remain reportable with
+totals, and token-telemetry coverage. It also reports controller-cost proxies for the delegating
+agent: tracked CLI interactions per run, gate rejections (refusals that cost a diagnose-and-retry
+round trip without any Codex work), failed Codex calls (full paid retries), and the review-surface
+bytes (`brief.md`, `evidence.md`, `result.json`) the delegating agent must read. These are workflow
+observations, not Claude token measurements; they make delegation friction and review volume
+comparable across runs. Old runs without observation events remain reportable with
 unknown metadata and explicit telemetry gaps. Invalid/corrupt runs are listed instead of silently
 discarded.
 

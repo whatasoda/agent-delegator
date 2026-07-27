@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { access, readdir, readFile } from "node:fs/promises";
+import { access, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import evaluationInputSchema from "../schemas/evaluation-input.schema.json";
@@ -255,7 +255,21 @@ export interface RunObservationSummary {
   blocked_count: number;
   brief_changed_by_claude: boolean | null;
   brief_json_difference_count: number | null;
+  controller_cost: {
+    tracked_invocations: number;
+    gate_rejections: number;
+    codex_failures: number;
+    review_surface_bytes: { brief_md: number | null; evidence_md: number | null; result_json: number | null };
+  };
   evaluation: EvaluationRecord | null;
+}
+
+async function fileSize(path: string): Promise<number | null> {
+  try {
+    return (await stat(path)).size;
+  } catch {
+    return null;
+  }
 }
 
 export async function buildRunObservation(runDir: string): Promise<RunObservationSummary> {
@@ -318,6 +332,23 @@ export async function buildRunObservation(runDir: string): Promise<RunObservatio
     blocked_count: events.filter((event) => event.event === "completed" && event.run_status === "blocked").length,
     brief_changed_by_claude: briefDifferenceCount === null ? null : briefDifferenceCount > 0,
     brief_json_difference_count: briefDifferenceCount,
+    controller_cost: {
+      // Proxy for delegating-agent interaction volume: started/recovered events plus
+      // attempt-less compile events, which mark codex-free revalidation calls.
+      tracked_invocations: events.filter((event) =>
+        event.event === "started" ||
+        event.event === "recovered" ||
+        (event.stage === "compile" && event.attempt === null)).length,
+      gate_rejections: events.filter((event) =>
+        event.event === "failed" && event.metrics.codex_invoked !== true).length,
+      codex_failures: events.filter((event) =>
+        event.event === "failed" && event.metrics.codex_invoked === true).length,
+      review_surface_bytes: {
+        brief_md: await fileSize(join(runDir, "brief.md")),
+        evidence_md: await fileSize(join(runDir, "evidence.md")),
+        result_json: await fileSize(join(runDir, "result.json")),
+      },
+    },
     evaluation,
   };
 }
@@ -341,6 +372,10 @@ export interface ObservationReport {
     output_tokens: number;
     briefs_compared: number;
     briefs_edited: number;
+    tracked_invocations: number;
+    gate_rejections: number;
+    codex_failed_calls: number;
+    review_surface_bytes: number;
   };
   averages: {
     source_count: number | null;
@@ -461,6 +496,14 @@ export async function buildObservationReport(runsDir: string): Promise<Observati
       output_tokens: runs.reduce((sum, run) => sum + run.usage.output_tokens, 0),
       briefs_compared: compared.length,
       briefs_edited: compared.filter((run) => run.brief_changed_by_claude).length,
+      tracked_invocations: runs.reduce((sum, run) => sum + run.controller_cost.tracked_invocations, 0),
+      gate_rejections: runs.reduce((sum, run) => sum + run.controller_cost.gate_rejections, 0),
+      codex_failed_calls: runs.reduce((sum, run) => sum + run.controller_cost.codex_failures, 0),
+      review_surface_bytes: runs.reduce((sum, run) =>
+        sum +
+        (run.controller_cost.review_surface_bytes.brief_md ?? 0) +
+        (run.controller_cost.review_surface_bytes.evidence_md ?? 0) +
+        (run.controller_cost.review_surface_bytes.result_json ?? 0), 0),
     },
     averages: {
       source_count: mean(runs.map((run) => run.sources.count)),
@@ -501,6 +544,8 @@ export function renderObservationReport(report: ObservationReport): string {
 - Briefs edited by Claude: ${report.summary.briefs_edited} / ${report.summary.briefs_compared} compared
 - Token telemetry coverage: ${report.summary.usage_observed_calls} / ${report.summary.codex_calls} Codex calls${report.summary.token_observation_percent === null ? "" : ` (${report.summary.token_observation_percent}%)`}
 - Input / cached input / output tokens observed: ${report.summary.input_tokens} / ${report.summary.cached_input_tokens} / ${report.summary.output_tokens}
+- Controller interactions tracked: ${report.summary.tracked_invocations} (gate rejections: ${report.summary.gate_rejections}, failed Codex calls: ${report.summary.codex_failed_calls})
+- Review surface bytes (brief.md + evidence.md + result.json): ${report.summary.review_surface_bytes}
 - Average ratings (requirements / implementation / communication): ${report.averages.ratings.requirements_fidelity ?? "n/a"} / ${report.averages.ratings.implementation_quality ?? "n/a"} / ${report.averages.ratings.communication_efficiency ?? "n/a"}
 
 ## Average stage duration
@@ -529,9 +574,9 @@ ${breakdownRows(report.breakdowns.failure_category)}
 
 ## Runs
 
-| Run | Type | Complexity | Status | Brief edits | Outcome |
-| --- | --- | --- | --- | --- | --- |
-${report.runs.map((run) => `| ${run.run_id} | ${run.metadata.task_type} | ${run.metadata.complexity} | ${run.status} | ${run.brief_json_difference_count ?? "n/a"} | ${String(run.evaluation?.outcome ?? "not-evaluated")} |`).join("\n")}
+| Run | Type | Complexity | Status | Brief edits | Gate rejections | Outcome |
+| --- | --- | --- | --- | --- | --- | --- |
+${report.runs.map((run) => `| ${run.run_id} | ${run.metadata.task_type} | ${run.metadata.complexity} | ${run.status} | ${run.brief_json_difference_count ?? "n/a"} | ${run.controller_cost.gate_rejections} | ${String(run.evaluation?.outcome ?? "not-evaluated")} |`).join("\n")}
 
 ${report.invalid_runs.length ? `## Invalid runs\n\n${report.invalid_runs.map((item) => `- ${item.run_dir}: ${item.error}`).join("\n")}\n` : ""}`;
 }

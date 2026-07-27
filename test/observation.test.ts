@@ -99,10 +99,23 @@ describe("run observation", () => {
       token_observation_percent: null,
     });
     expect(report.runs[0]?.metadata).toEqual({ task_type: "other", complexity: "unknown", tags: [] });
+    expect(report.runs[0]?.controller_cost).toEqual({
+      tracked_invocations: 0,
+      gate_rejections: 0,
+      codex_failures: 0,
+      review_surface_bytes: { brief_md: null, evidence_md: null, result_json: null },
+    });
+    expect(report.summary).toMatchObject({
+      tracked_invocations: 0,
+      gate_rejections: 0,
+      codex_failed_calls: 0,
+      review_surface_bytes: 0,
+    });
     expect(report.invalid_runs).toHaveLength(1);
     expect(report.invalid_runs[0]?.error).toContain("Recorded evaluation");
     expect(report.breakdowns.task_type).toEqual({ other: 1 });
     expect(renderObservationReport(report)).toContain("Token telemetry coverage: 0 / 0 Codex calls");
+    expect(renderObservationReport(report)).toContain("Controller interactions tracked: 0 (gate rejections: 0, failed Codex calls: 0)");
   });
 
   test("rejects incomplete Claude evaluations and corrupt event streams", async () => {

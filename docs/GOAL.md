@@ -94,7 +94,10 @@ implementer。`DESIGN_AND_ROADMAP.md` の「Later」項目は本サイクルの�
 - [x] P3-1: Codex stderr パススルーの抑止/要約（`stderr.log` への保存は維持）。
   既定でライブ転送を停止（`AGENT_DELEGATOR_STREAM_CODEX_STDERR=1` でオプトイン）、失敗
   メッセージが `stderr.log` を指す。（2026-07-27 done）
-- [ ] P3-2: `report` に委譲元コストの代理指標（コマンド実行回数・stdout バイト・リトライ起因往復数）を追加。
+- [x] P3-2: `report` に委譲元コストの代理指標を追加。run ごとの `controller_cost`
+  （tracked_invocations / gate_rejections / codex_failures / review_surface_bytes）と
+  report summary の合計・Markdown 表示。ゲート誤発火（完了判定 i）が run 単位で計測可能に。
+  stdout バイトの直接計測は費用対効果が低く review-surface バイトで代替。（2026-07-27 done）
 - [ ] P3-3: 長時間実行の見張りコスト削減（完了まで待つ実行モード等）。
 
 ### Phase 4 — 実利用の仕上げ（中優先の摩擦）
