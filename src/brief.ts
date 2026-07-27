@@ -143,7 +143,8 @@ function forbiddenAction(text: string): string | null {
 
 function citedContent(source: BriefSource, evidence: BriefEvidenceSource): string | null {
   if (evidence.content === undefined) return null;
-  if (source.turn === null || evidence.kind === "file") return evidence.content;
+  if (evidence.kind === "file") return evidence.content;
+  if (source.turn === null) return transcriptDecisionContent(evidence.content);
   const turnPattern = new RegExp(
     `<transcript-turn number=["']${source.turn}["'][^>]*>\\n([\\s\\S]*?)\\n</transcript-turn>`,
   );
@@ -167,6 +168,27 @@ function transcriptTurns(content: string): { turn: number; content: string }[] {
     });
   }
   return turns;
+}
+
+// Null-turn transcript citations target AskUserQuestion decision events, whose snapshot text is
+// XML-escaped; matching against the raw document would reject any quote containing & < > and let
+// quotes match markup instead of conversation content.
+function transcriptDecisionContent(content: string): string {
+  const pattern = /<transcript-decision [^>]*>\n([\s\S]*?)\n<\/transcript-decision>/g;
+  return [...content.matchAll(pattern)]
+    .map((match) => match[1]!
+      .replace(/<[^>]+>/g, "\n")
+      .replaceAll("&lt;", "<")
+      .replaceAll("&gt;", ">")
+      .replaceAll("&amp;", "&"))
+    .join("\n");
+}
+
+function quoteOccursInEvidence(evidence: BriefEvidenceSource, quote: string): boolean {
+  if (evidence.content === undefined) return false;
+  if (evidence.kind === "file") return quoteOccursIn(evidence.content, quote);
+  return quoteOccursIn(transcriptDecisionContent(evidence.content), quote) ||
+    transcriptTurns(evidence.content).some((turn) => quoteOccursIn(turn.content, quote));
 }
 
 function contiguousOverlapScore(content: string, quote: string): number {
@@ -255,7 +277,7 @@ export function repairBriefCitationSources(
       if (cited !== null && quoteOccursIn(cited, source.quote)) continue;
 
       const candidates = [...evidenceSources.entries()]
-        .filter(([, evidence]) => evidence.content !== undefined && quoteOccursIn(evidence.content, source.quote));
+        .filter(([, evidence]) => quoteOccursInEvidence(evidence, source.quote));
       if (candidates.length !== 1 || candidates[0]![0] === source.source_id) continue;
 
       const citedSourceId = source.source_id;
@@ -303,7 +325,7 @@ export function validateBriefEvidence(
         );
       }
       const content = citedContent(source, evidence);
-      const turns = evidence.kind === "transcript" && source.turn !== null && evidence.content !== undefined
+      const turns = evidence.kind === "transcript" && evidence.content !== undefined
         ? transcriptTurns(evidence.content)
         : [];
       const candidateTurns = turns
@@ -325,7 +347,7 @@ export function validateBriefEvidence(
       } else if (content !== null && !quoteOccursIn(content, source.quote)) {
         if (candidateTurns.length) {
           errors.push(
-            `${group.label} quote occurs in ${source.source_id} transcript turn${candidateTurns.length === 1 ? "" : "s"} ${candidateTurns.join(", ")}, not cited turn ${source.turn}`,
+            `${group.label} quote occurs in ${source.source_id} transcript turn${candidateTurns.length === 1 ? "" : "s"} ${candidateTurns.join(", ")}, not ${source.turn === null ? "the null-turn decision events" : `cited turn ${source.turn}`}`,
           );
         } else {
           errors.push(

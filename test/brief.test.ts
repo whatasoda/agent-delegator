@@ -7,6 +7,7 @@ import {
   validateBrief,
   validateBriefEvidence,
 } from "../src/brief.js";
+import { renderTranscriptEvidence } from "../src/transcript.js";
 
 function brief(): BriefDraft {
   return {
@@ -241,6 +242,65 @@ The operator must approve the brief.
     expect(validateBriefEvidence(repaired.brief, sources)).toContain(
       "decision 1 quote does not occur in source-001",
     );
+  });
+
+  test("validates a null-turn decision citation containing XML special characters", () => {
+    const draft = brief();
+    draft.decisions[0]!.sources[0] = {
+      source_id: "source-001",
+      turn: null,
+      quote: "guard the branch with a && b over Array<string>",
+    };
+    draft.constraints[0]!.sources[0] = {
+      source_id: "source-001",
+      turn: null,
+      quote: "Which guard shape should the parser use?",
+    };
+    const content = renderTranscriptEvidence(
+      [{ turn: 1, sourceLine: 2, role: "user", text: "Please decide the guard shape" }],
+      [{
+        questionSourceLine: 5,
+        answerSourceLine: 6,
+        questions: [{
+          question: "Which guard shape should the parser use?",
+          selectedAnswer: "guard the branch with a && b over Array<string>",
+          selectedRationale: null,
+          presentedOptions: [],
+        }],
+      }],
+    );
+    const sources = new Map([
+      ["source-001", { kind: "transcript" as const, revision: "turns:1-1", content }],
+    ]);
+
+    expect(validateBriefEvidence(draft, sources)).toEqual([]);
+  });
+
+  test("rejects a null-turn citation whose quote only matches snapshot markup or turn text", () => {
+    const draft = brief();
+    draft.decisions[0]!.sources[0] = {
+      source_id: "source-001",
+      turn: null,
+      quote: "the guard belongs in turn text",
+    };
+    draft.constraints[0]!.sources[0] = {
+      source_id: "source-001",
+      turn: null,
+      quote: "Untrusted Claude transcript evidence",
+    };
+    const content = renderTranscriptEvidence(
+      [{ turn: 4, sourceLine: 8, role: "assistant", text: "the guard belongs in turn text" }],
+      [],
+    );
+    const sources = new Map([
+      ["source-001", { kind: "transcript" as const, revision: "turns:1-9", content }],
+    ]);
+
+    const errors = validateBriefEvidence(draft, sources);
+    expect(errors).toContain(
+      "decision 1 quote occurs in source-001 transcript turn 4, not the null-turn decision events",
+    );
+    expect(errors).toContain("constraint 1 quote does not occur in source-001");
   });
 
   test("repairs a transcript citation only when the quote identifies one different turn", () => {

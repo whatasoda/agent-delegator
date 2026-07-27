@@ -62,11 +62,13 @@ implementer。`DESIGN_AND_ROADMAP.md` の「Later」項目は本サイクルの�
 
 ### Phase 1 — ブロッカー（ターゲットリポジトリで使えない）
 
-- [ ] P1-1: run ディレクトリの自己無効化を解消する。runs ディレクトリ作成時に `.gitignore`（`*`）を
+- [x] P1-1: run ディレクトリの自己無効化を解消する。runs ディレクトリ作成時に `.gitignore`（`*`）を
   書き、worktree fingerprint / checkpoint / `git status` から run 成果物を恒久的に除外する。
-  README の「ignored by Git」記述を実装に一致させる。
-- [ ] P1-2: null-turn citation の XML エスケープ照合バグを修正する（decision event 引用に
-  `&` `<` `>` が含まれると検証が絶対に通らない）。
+  README の「ignored by Git」記述を実装に一致させる。（2026-07-27 done）
+- [x] P1-2: null-turn citation の XML エスケープ照合バグを修正する（decision event 引用に
+  `&` `<` `>` が含まれると検証が絶対に通らない）。null-turn 照合を decision event の
+  非エスケープ本文に限定し、turn 本文にしかない引用には該当 turn を診断で提示する。
+  （2026-07-27 done）
 
 ### Phase 2 — 詰み解消（回復経路）
 
