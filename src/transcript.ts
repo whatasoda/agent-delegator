@@ -73,6 +73,11 @@ function extractText(content: TranscriptContent | undefined): string {
     .join("\n\n");
 }
 
+// Bare type annotations are code evidence, not secret values; redacting them corrupts exactly the
+// auth/config sources whose Briefs need accurate quotes.
+const typeAnnotationValue =
+  /^(?:(?:string|number|boolean|unknown|any|never|object|bigint|symbol|null|undefined|true|false|String|Number|Boolean)[,;)\]}]*|z\.[A-Za-z0-9_().]+)$/;
+
 export function redactSecrets(text: string): string {
   return text
     .replace(
@@ -81,10 +86,17 @@ export function redactSecrets(text: string): string {
     )
     .replace(/\b(sk-(?:ant-)?[A-Za-z0-9_-]{12,})\b/g, "[REDACTED_API_KEY]")
     .replace(/\b(gh[oprsu]_[A-Za-z0-9_]{12,})\b/g, "[REDACTED_GITHUB_TOKEN]")
+    .replace(/\b(github_pat_[A-Za-z0-9_]{20,})\b/g, "[REDACTED_GITHUB_TOKEN]")
+    .replace(/\b(xox[a-z]-[A-Za-z0-9-]{8,})\b/g, "[REDACTED_SLACK_TOKEN]")
+    .replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, "[REDACTED_AWS_KEY_ID]")
+    .replace(/\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\b/g, "[REDACTED_JWT]")
+    .replace(/\b([a-z][a-z0-9+.-]*:\/\/[^/\s:@]+):([^@\s/]{1,128})@/gi, "$1:[REDACTED]@")
     .replace(/\b(Bearer)\s+[A-Za-z0-9._~+/=-]{12,}/gi, "$1 [REDACTED_TOKEN]")
+    .replace(/\b(Basic)\s+[A-Za-z0-9+/=]{12,}/gi, "$1 [REDACTED_TOKEN]")
     .replace(
-      /\b(api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)\s*([:=])\s*([^\s,;]+)/gi,
-      "$1$2[REDACTED]",
+      /\b(api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)\s*([:=])\s*("[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi,
+      (match, key: string, separator: string, value: string) =>
+        typeAnnotationValue.test(value) ? match : `${key}${separator}[REDACTED]`,
     );
 }
 

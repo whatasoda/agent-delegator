@@ -123,4 +123,44 @@ private-material
     expect(output).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz");
     expect(output).not.toContain("private-material");
   });
+
+  test("redacts fine-grained PATs, Slack tokens, JWTs, AWS key ids, and URL credentials", () => {
+    // Assembled at runtime so the Slack-shaped fixture never appears verbatim in the source;
+    // secret scanners (including GitHub push protection) flag the contiguous literal.
+    const slackShapedToken = ["xoxb", "1234567890", "abcdefghijklmnop"].join("-");
+    const input = [
+      "github_pat_11ABCDEFG0abcdefghijklmnopqrstuv",
+      slackShapedToken,
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJVadQssw5c",
+      "AKIAIOSFODNN7EXAMPLE",
+      "postgres://admin:SuperSecret99@db.internal/prod",
+      'Authorization: Basic YWRtaW46aHVudGVyMg==',
+      'password: "hunter two"',
+    ].join("\n");
+    const output = redactSecrets(input);
+
+    expect(output).not.toContain("github_pat_11ABCDEFG0abcdefghijklmnopqrstuv");
+    expect(output).not.toContain(slackShapedToken);
+    expect(output).not.toContain("SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJVadQssw5c");
+    expect(output).not.toContain("AKIAIOSFODNN7EXAMPLE");
+    expect(output).not.toContain("SuperSecret99");
+    expect(output).toContain("postgres://admin:[REDACTED]@db.internal/prod");
+    expect(output).not.toContain("YWRtaW46aHVudGVyMg==");
+    expect(output).not.toContain("hunter two");
+  });
+
+  test("preserves bare type annotations while still redacting literal values", () => {
+    const input = [
+      "password: string",
+      "secret: z.string().min(8)",
+      "apiKey: string;",
+      "password: hunter2",
+    ].join("\n");
+    const output = redactSecrets(input);
+
+    expect(output).toContain("password: string");
+    expect(output).toContain("secret: z.string().min(8)");
+    expect(output).toContain("apiKey: string;");
+    expect(output).not.toContain("hunter2");
+  });
 });

@@ -104,9 +104,10 @@ implementer。`DESIGN_AND_ROADMAP.md` の「Later」項目は本サイクルの�
 
 ### Phase 4 — 実利用の仕上げ（中優先の摩擦）
 
-- [ ] P4-1: redaction の実用化（`github_pat_` / `xoxb-` / JWT / AKIA / URL 埋め込み認証の追加、
-  型定義誤検知の抑制）。
-- [ ] P4-2: セッションディレクトリ名エンコードの Claude Code 実装準拠（`.` `_` → `-`）。
+- [x] P4-1: redaction の実用化。fine-grained PAT / Slack / JWT / AWS key id / URL 認証 / Basic を
+  追加、引用符値を末尾まで redact、bare 型注釈（`password: string` 等）は保持。（2026-07-27 done）
+- [x] P4-2: セッションディレクトリ名エンコードの Claude Code 実装準拠（非英数字→`-`）。
+  （2026-07-27 done）
 - [ ] P4-3: collection の全損性緩和（optional ソースのバイナリ/サイズ超過は exclusion 記録に、
   クイックパスからの limits 指定手段）。
 - [ ] P4-4: 実装成功後の checkpoint 失敗で成功が破棄される問題の分離。
