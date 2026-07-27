@@ -1,8 +1,10 @@
 name: Release (npm alpha)
 
 # Owner-triggered only. Publishes the current checkout to the npm `alpha` dist-tag with provenance
-# via npm Trusted Publishing (OIDC) — configure the trusted publisher for
-# @whatasoda/agent-delegator on npmjs.com before the first run; no npm token is stored.
+# via npm Trusted Publishing (OIDC); no npm token is stored. npm cannot attach a trusted publisher
+# to a package that does not exist yet, so the very first publish is performed manually by the
+# owner (npm publish from a clean tagged checkout after the full release gate); configure the
+# trusted publisher on npmjs.com afterwards and use this workflow for every subsequent publish.
 on:
   workflow_dispatch:
 

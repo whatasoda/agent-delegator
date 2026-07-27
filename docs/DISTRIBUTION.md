@@ -29,10 +29,13 @@ are excluded. `bun run package:smoke` builds a tarball, checks its allowlist, in
 temporary consumer without registry access, and completes a packaged compile with a fake Codex. The
 smoke also proves that installed attempts retain an executable SHA-256 when Git metadata is absent.
 
-Registry publishes happen only through the owner-triggered `Release (npm alpha)` workflow
-(`.github/workflows/release.yml`), which runs the full release gate and publishes with npm Trusted
-Publishing provenance; no npm token is stored, and the trusted publisher must be configured on
-npmjs.com once before the first run. Never publish from a working session or a local machine.
+Registry publishes are owner-triggered only. npm cannot attach a trusted publisher to a package
+that does not exist on the registry yet, so the bootstrap sequence is: (1) the owner performs the
+first publish manually from a clean tagged checkout after the full release gate; (2) the owner
+configures the trusted publisher for the now-existing package on npmjs.com; (3) every subsequent
+publish goes through the `Release (npm alpha)` workflow (`.github/workflows/release.yml`), which
+runs the full release gate and publishes with Trusted Publishing provenance — no npm token is
+stored. Working sessions never publish.
 
 ## Phase 1: extracted core package and the alpha channel
 
