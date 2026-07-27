@@ -131,10 +131,11 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
 - [x] D-3: owner トリガーの npm alpha release workflow（Trusted Publishing / provenance、
   リリースゲート組込み）と DISTRIBUTION.md / DESIGN_AND_ROADMAP §8 の方針改訂。
   （2026-07-27 done）
-- [ ] D-4: 公開の実行 — オーナー操作。npm は未存在パッケージに Trusted Publisher を設定できない
-  ため、(1) 初回のみゲート通過済み tagged checkout からオーナーが手動 `npm publish` →
-  (2) Trusted Publisher 設定 → (3) 以降は release workflow に一本化。T-1 trial を 1〜2 本
-  先行させ、schema の揺れを公開前に吸収することを推奨。
+- [x] D-4: 公開の実行 — オーナー操作。`0.1.0-alpha.1` を初回手動 publish し、Trusted Publisher
+  （release.yml）と Publishing access（2FA 必須・トークン禁止）を設定済み。以降の publish は
+  release workflow に一本化。npx/bunx 経由の install→launcher→CLI 実行を検証済み。
+  なお npm は初回 publish で `latest` を必ず付与するため（撤回不可）、`latest` も当面 alpha 版を
+  指す。安定版リリース時に自然に移行する。（2026-07-27 done）
 - [ ] D-5: public marketplace 化＋thin plugin（operator skill の配布）。agent-extensions と同型。
 
 ### Trial — 実業務リポジトリ検証

@@ -19,10 +19,15 @@ core-package, Claude-plugin, and standalone release plan is in
 
 ## Installation
 
-The package is MIT-licensed prerelease software. The planned public channel is the npm `alpha`
-dist-tag (`bun add --global @whatasoda/agent-delegator@alpha` once published); until the first
-publish, build and inspect a versioned tarball from a clean checkout, then install that reviewed
-artifact with Bun:
+The package is MIT-licensed prerelease software, published to the npm `alpha` dist-tag:
+
+```sh
+bun add --global @whatasoda/agent-delegator@alpha
+agent-delegator --version
+```
+
+Alternatively, build and inspect a versioned tarball from a clean checkout, then install that
+reviewed artifact with Bun:
 
 ```sh
 bun install --frozen-lockfile
