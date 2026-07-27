@@ -125,6 +125,7 @@ const argumentSpecs: Record<string, ArgumentSpec> = {
     guardedFlags: ["--allow-base-change", "--allow-worktree-change", "--retry"],
   },
   status: { values: ["--run", "--runs-dir"], flags: ["--observation", "--force-fail"] },
+  wait: { values: ["--run", "--runs-dir", "--timeout-seconds"] },
   evaluate: { values: ["--run", "--runs-dir", "--evaluation"] },
   report: { values: ["--cwd", "--runs-dir", "--format"] },
   help: {},
@@ -1207,33 +1208,60 @@ function processIsAlive(pid: number): boolean {
   }
 }
 
+function isActiveRunStatus(state: RunState): boolean {
+  return state.status === "collecting" || state.status === "compiling" || state.status === "implementing";
+}
+
+async function recoverInterruptedRun(runDir: string, state: RunState, forced: boolean): Promise<boolean> {
+  if (!isActiveRunStatus(state)) return false;
+  if (!forced && state.controllerPid && processIsAlive(state.controllerPid)) return false;
+  const interruptedOperation = state.activeOperation ?? (state.status === "compiling" ? "compile" : state.status === "collecting" ? "collect" : "implement");
+  state.status = "failed";
+  state.failurePhase = interruptedOperation;
+  state.failure = forced
+    ? `The ${interruptedOperation} operation was force-failed by the operator; verify no Codex process is still running and inspect the worktree before retrying.`
+    : `The ${interruptedOperation} controller process is no longer running; inspect artifacts before retrying.`;
+  state.activeOperation = null;
+  state.controllerPid = null;
+  await writeRunState(runDir, state);
+  await appendRunEvent(runDir, {
+    stage: "status", event: "recovered", attempt: null, duration_ms: null, model: null,
+    run_status: state.status, failure_category: "interrupted", message: state.failure, usage: null,
+    metrics: {}, artifacts: ["state.json"],
+  });
+  return true;
+}
+
 async function commandStatus(args: string[]): Promise<void> {
   const runDir = await resolveRun(args, process.cwd());
   const state = await readRunState(runDir);
-  const activeStatus = state.status === "collecting" || state.status === "compiling" || state.status === "implementing";
   const forced = flag(args, "--force-fail");
-  if (forced && !activeStatus) {
+  if (forced && !isActiveRunStatus(state)) {
     throw new Error(`--force-fail requires an active run; current status is ${state.status}`);
   }
-  if (activeStatus && (forced || !state.controllerPid || !processIsAlive(state.controllerPid))) {
-    const interruptedOperation = state.activeOperation ?? (state.status === "compiling" ? "compile" : state.status === "collecting" ? "collect" : "implement");
-    state.status = "failed";
-    state.failurePhase = interruptedOperation;
-    state.failure = forced
-      ? `The ${interruptedOperation} operation was force-failed by the operator; verify no Codex process is still running and inspect the worktree before retrying.`
-      : `The ${interruptedOperation} controller process is no longer running; inspect artifacts before retrying.`;
-    state.activeOperation = null;
-    state.controllerPid = null;
-    await writeRunState(runDir, state);
-    await appendRunEvent(runDir, {
-      stage: "status", event: "recovered", attempt: null, duration_ms: null, model: null,
-      run_status: state.status, failure_category: "interrupted", message: state.failure, usage: null,
-      metrics: {}, artifacts: ["state.json"],
-    });
-  }
+  await recoverInterruptedRun(runDir, state, forced);
   print(flag(args, "--observation")
     ? { run_dir: runDir, state, observation: await buildRunObservation(runDir) }
     : { run_dir: runDir, ...state });
+}
+
+async function commandWait(args: string[]): Promise<void> {
+  const runDir = await resolveRun(args, process.cwd());
+  const deadline = Date.now() + timeoutMs(args);
+  for (;;) {
+    const state = await readRunState(runDir);
+    await recoverInterruptedRun(runDir, state, false);
+    if (!isActiveRunStatus(state)) {
+      print({ run_dir: runDir, ...state });
+      return;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Run ${state.runId} is still ${state.status} after the wait timeout; the controller is alive, so raise --timeout-seconds or keep waiting separately`,
+      );
+    }
+    await new Promise((resolveSleep) => setTimeout(resolveSleep, 2_000));
+  }
 }
 
 async function commandEvaluate(args: string[]): Promise<void> {
@@ -1296,6 +1324,7 @@ function usage(): string {
   agent-delegator implement --run <id-or-path> [--model <model>] [--retry]
   agent-delegator resume --run <id-or-path> (--message <text> | --addendum <path>) [--retry]
   agent-delegator status --run <id-or-path> [--observation] [--force-fail]
+  agent-delegator wait --run <id-or-path> [--timeout-seconds <n>]
   agent-delegator evaluate --run <id-or-path> --evaluation <path>
   agent-delegator report [--runs-dir <dir>] [--format markdown|json]
 
@@ -1341,6 +1370,9 @@ async function main(): Promise<void> {
       break;
     case "resume":
       await commandResume(args);
+      break;
+    case "wait":
+      await commandWait(args);
       break;
     case "status":
       await commandStatus(args);

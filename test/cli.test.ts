@@ -597,6 +597,34 @@ describe("agent-delegator CLI", () => {
     expect(streamed.stderr).toContain("fake codex stderr noise");
   });
 
+  test("wait settles immediately on inactive runs and recovers dead controllers", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    await run(
+      ["compile", "--objective", "Wait check", "--transcript", transcript, "--runs-dir", runs, "--run-id", "wait-run"],
+      repo,
+      env,
+    );
+
+    const settled = await run(["wait", "--run", "wait-run", "--runs-dir", runs], repo, env);
+    expect(settled.exitCode).toBe(0);
+    expect(JSON.parse(settled.stdout).status).toBe("compiled");
+
+    const exited = Bun.spawn(["true"]);
+    await exited.exited;
+    const statePath = join(runs, "wait-run", "state.json");
+    const state = JSON.parse(await readFile(statePath, "utf8"));
+    state.status = "implementing";
+    state.activeOperation = "implement";
+    state.controllerPid = exited.pid;
+    await writeFile(statePath, JSON.stringify(state, null, 2));
+
+    const recovered = await run(["wait", "--run", "wait-run", "--runs-dir", runs], repo, env);
+    expect(recovered.exitCode).toBe(0);
+    const recoveredState = JSON.parse(recovered.stdout);
+    expect(recoveredState.status).toBe("failed");
+    expect(recoveredState.failurePhase).toBe("implement");
+  });
+
   test("rechecks approval inputs and Git HEAD before resume", async () => {
     const { repo, runs, transcript, env, log } = await fixture();
     await run(

@@ -134,6 +134,7 @@ bun run agent-delegator resume \
   --message="Claude's decision and rationale"
 bun run agent-delegator status --run <run-id>
 bun run agent-delegator status --run <run-id> --observation
+bun run agent-delegator wait --run <run-id>
 bun run agent-delegator evaluate \
   --run <run-id> \
   --evaluation=examples/evaluation-input.json
@@ -321,10 +322,14 @@ signal to the Codex process group, then escalates to SIGKILL after a short grace
 unresponsive Codex cannot hang the controller or keep editing the worktree unsupervised.
 
 The caller's foreground-command timeout is separate from the agent-delegator timeout. When Claude's
-shell tool cannot wait for the configured Codex duration, keep the controller alive with the shell
-tool's supported background mechanism, retain its output, and poll `status --observation` plus the
-attempt logs. A caller timeout that terminates the controller is an interruption, not evidence that
-Codex made no edits. Inspect the worktree and surviving child processes before retrying.
+shell tool cannot wait for the configured Codex duration, run the controller with the shell tool's
+supported background mechanism and rely on its completion notification instead of periodic polling —
+each poll costs the delegating agent a full turn. From a different session or terminal,
+`wait --run <id>` blocks in-process until the run settles (applying the same stale-controller
+recovery as `status`) and prints the final state once, so one background command replaces a polling
+loop there too. Reserve `status --observation` for diagnosis rather than progress checking. A caller
+timeout that terminates the controller is an interruption, not evidence that Codex made no edits.
+Inspect the worktree and surviving child processes before retrying.
 
 `status` detects an active state whose controller process disappeared and converts it to `failed`.
 When PID reuse makes a dead controller look alive and the run stays stuck in an active state,

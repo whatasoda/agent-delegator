@@ -98,7 +98,9 @@ implementer。`DESIGN_AND_ROADMAP.md` の「Later」項目は本サイクルの�
   （tracked_invocations / gate_rejections / codex_failures / review_surface_bytes）と
   report summary の合計・Markdown 表示。ゲート誤発火（完了判定 i）が run 単位で計測可能に。
   stdout バイトの直接計測は費用対効果が低く review-surface バイトで代替。（2026-07-27 done）
-- [ ] P3-3: 長時間実行の見張りコスト削減（完了まで待つ実行モード等）。
+- [x] P3-3: 長時間実行の見張りコスト削減。`wait --run <id>` が run の settle まで in-process で
+  ブロック（stale controller 回復込み）。README の運用ガイダンスを「ポーリング」から
+  「background 実行＋完了通知 / wait」へ更新。（2026-07-27 done）
 
 ### Phase 4 — 実利用の仕上げ（中優先の摩擦）
 
