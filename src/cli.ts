@@ -109,9 +109,9 @@ const argumentSpecs: Record<string, ArgumentSpec> = {
   },
   approve: {
     values: ["--run", "--runs-dir", "--by"],
-    flags: ["--allow-unresolved"],
+    flags: ["--allow-unresolved", "--allow-base-change"],
     textValues: ["--by"],
-    guardedFlags: ["--allow-unresolved"],
+    guardedFlags: ["--allow-unresolved", "--allow-base-change"],
   },
   implement: {
     values: ["--run", "--runs-dir", "--model", "--timeout-seconds"],
@@ -786,7 +786,14 @@ async function commandApprove(args: string[]): Promise<void> {
       throw new Error(`Brief has ${validatedBrief.unresolved_items.length} unresolved item(s). Resolve them or pass --allow-unresolved explicitly.`);
     }
     const currentCommit = await gitValue(state.repoRoot, "rev-parse", "HEAD");
-    if (currentCommit !== state.baseCommit) throw new Error("Repository HEAD changed after Brief compilation; recompile before approval");
+    if (currentCommit !== state.baseCommit) {
+      if (!flag(args, "--allow-base-change")) {
+        throw new Error(
+          `Repository HEAD changed after Brief compilation (${state.baseCommit} -> ${currentCommit}); review the Brief against the new base and pass --allow-base-change explicitly, or start a new run.`,
+        );
+      }
+      state.baseCommit = currentCommit;
+    }
     const approvedWorktreeSha256 = await worktreeFingerprint(state.repoRoot);
     await writeText(join(runDir, "brief.md"), renderBrief(validatedBrief));
     await createApproval(runDir, {
@@ -1195,7 +1202,7 @@ function usage(): string {
   agent-delegator resolve-transcript [--cwd <path>] [--json] [--allow-latest-fallback]
   agent-delegator collect (--context <path> | --objective <text>) [source options]
   agent-delegator compile (--run <id> | --context <path> | --objective <text>) [--model <model>] [--dry-run]
-  agent-delegator approve --run <id-or-path> [--by claude] [--allow-unresolved]
+  agent-delegator approve --run <id-or-path> [--by claude] [--allow-unresolved] [--allow-base-change]
   agent-delegator implement --run <id-or-path> [--model <model>] [--retry]
   agent-delegator resume --run <id-or-path> (--message <text> | --addendum <path>) [--retry]
   agent-delegator status --run <id-or-path> [--observation]
@@ -1210,7 +1217,7 @@ Common options:
   --project-profile <path>  Override agent-delegator.project.json
   --allow-latest-fallback   Allow compile to use the newest transcript for this cwd
   --allow-unresolved        Approve a reviewed Brief that still has explicit unresolved items
-  --allow-base-change       Allow implementation/resume after repository HEAD changed
+  --allow-base-change       Allow approval/implementation/resume after repository HEAD changed
   --allow-worktree-change   Allow execution after reviewing a changed worktree
   --timeout-seconds <n>     Codex call timeout (default 1800)
   --runs-dir <dir>          Override <repo>/.agent-delegator/runs

@@ -438,6 +438,36 @@ describe("agent-delegator CLI", () => {
     expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(2);
   });
 
+  test("re-binds approval to a moved Git HEAD only when explicitly acknowledged", async () => {
+    const { repo, runs, transcript, env, log } = await fixture();
+    await run(
+      ["compile", "--objective", "Approve base check", "--transcript", transcript, "--runs-dir", runs, "--run-id", "approve-base"],
+      repo,
+      env,
+    );
+    await writeFile(join(repo, "between.txt"), "committed between compile and approve\n");
+    await git(repo, "add", "between.txt");
+    await git(repo, "-c", "user.name=Agent Delegator Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "between");
+
+    const rejected = await run(["approve", "--run", "approve-base", "--runs-dir", runs, "--allow-unresolved"], repo, env);
+    expect(rejected.exitCode).toBe(1);
+    expect(rejected.stderr).toContain("Repository HEAD changed after Brief compilation");
+    expect(rejected.stderr).toContain("--allow-base-change");
+
+    const approved = await run(
+      ["approve", "--run", "approve-base", "--runs-dir", runs, "--allow-unresolved", "--allow-base-change"],
+      repo,
+      env,
+    );
+    expect(approved.exitCode).toBe(0);
+    expect(JSON.parse(approved.stdout).status).toBe("approved");
+
+    const implementation = await run(["implement", "--run", "approve-base", "--runs-dir", runs], repo, env);
+    expect(implementation.exitCode).toBe(0);
+    expect(JSON.parse(implementation.stdout).status).toBe("needs-decision");
+    expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(2);
+  });
+
   test("rechecks approval inputs and Git HEAD before resume", async () => {
     const { repo, runs, transcript, env, log } = await fixture();
     await run(

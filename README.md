@@ -289,6 +289,9 @@ cost because model pricing and billing semantics are external and time-dependent
 - `state.json` records the collected Bundle hash to detect accidental pre-approval drift. Because it
   lives in the same local run directory, this is a consistency check, not a signature against a
   hostile local writer; approval remains the durable workflow boundary.
+- Approval refuses to proceed when repository HEAD moved after Brief compilation unless the caller
+  acknowledges the reviewed change with `--allow-base-change`, which re-binds the approval to the
+  current commit instead of forcing a new run.
 - Implementation refuses to start when repository HEAD or dirty-worktree contents changed after
   approval unless the caller explicitly acknowledges the reviewed change with
   `--allow-base-change` or `--allow-worktree-change`.

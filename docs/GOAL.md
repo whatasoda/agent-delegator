@@ -72,7 +72,9 @@ implementer。`DESIGN_AND_ROADMAP.md` の「Later」項目は本サイクルの�
 
 ### Phase 2 — 詰み解消（回復経路）
 
-- [ ] P2-1: compile↔approve 間の HEAD 変化に、run を作り直さない回復経路を与える。
+- [x] P2-1: compile↔approve 間の HEAD 変化に、run を作り直さない回復経路を与える。
+  `approve --allow-base-change` が新しい base commit へ approval を再バインドする。
+  （2026-07-27 done）
 - [ ] P2-2: Claude が手修正した `brief.json` を Codex 再実行なしで再検証・再 compiled 化する経路。
 - [ ] P2-3: resume thread 喪失時に approved Brief から実装をやり直せる経路。
 - [ ] P2-4: stale な active state の強制回復（PID 再利用対策を含む）。
