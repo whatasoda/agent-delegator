@@ -124,7 +124,7 @@ const argumentSpecs: Record<string, ArgumentSpec> = {
     textValues: ["--message"],
     guardedFlags: ["--allow-base-change", "--allow-worktree-change", "--retry"],
   },
-  status: { values: ["--run", "--runs-dir"], flags: ["--observation"] },
+  status: { values: ["--run", "--runs-dir"], flags: ["--observation", "--force-fail"] },
   evaluate: { values: ["--run", "--runs-dir", "--evaluation"] },
   report: { values: ["--cwd", "--runs-dir", "--format"] },
   help: {},
@@ -1203,14 +1203,18 @@ function processIsAlive(pid: number): boolean {
 async function commandStatus(args: string[]): Promise<void> {
   const runDir = await resolveRun(args, process.cwd());
   const state = await readRunState(runDir);
-  if (
-    (state.status === "collecting" || state.status === "compiling" || state.status === "implementing") &&
-    (!state.controllerPid || !processIsAlive(state.controllerPid))
-  ) {
+  const activeStatus = state.status === "collecting" || state.status === "compiling" || state.status === "implementing";
+  const forced = flag(args, "--force-fail");
+  if (forced && !activeStatus) {
+    throw new Error(`--force-fail requires an active run; current status is ${state.status}`);
+  }
+  if (activeStatus && (forced || !state.controllerPid || !processIsAlive(state.controllerPid))) {
     const interruptedOperation = state.activeOperation ?? (state.status === "compiling" ? "compile" : state.status === "collecting" ? "collect" : "implement");
     state.status = "failed";
     state.failurePhase = interruptedOperation;
-    state.failure = `The ${interruptedOperation} controller process is no longer running; inspect artifacts before retrying.`;
+    state.failure = forced
+      ? `The ${interruptedOperation} operation was force-failed by the operator; verify no Codex process is still running and inspect the worktree before retrying.`
+      : `The ${interruptedOperation} controller process is no longer running; inspect artifacts before retrying.`;
     state.activeOperation = null;
     state.controllerPid = null;
     await writeRunState(runDir, state);
@@ -1284,7 +1288,7 @@ function usage(): string {
   agent-delegator approve --run <id-or-path> [--by claude] [--allow-unresolved] [--allow-base-change]
   agent-delegator implement --run <id-or-path> [--model <model>] [--retry]
   agent-delegator resume --run <id-or-path> (--message <text> | --addendum <path>) [--retry]
-  agent-delegator status --run <id-or-path> [--observation]
+  agent-delegator status --run <id-or-path> [--observation] [--force-fail]
   agent-delegator evaluate --run <id-or-path> --evaluation <path>
   agent-delegator report [--runs-dir <dir>] [--format markdown|json]
 

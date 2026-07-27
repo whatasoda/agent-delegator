@@ -82,7 +82,9 @@ implementer。`DESIGN_AND_ROADMAP.md` の「Later」項目は本サイクルの�
   `implement --retry` が failed resume からも新セッションで再実装できる。worktree 照合は
   「最後に approve/checkpoint した状態」基準になり、クリーンな失敗後はフラグ不要。
   （2026-07-27 done）
-- [ ] P2-4: stale な active state の強制回復（PID 再利用対策を含む）。
+- [x] P2-4: stale な active state の強制回復（PID 再利用対策を含む）。
+  `status --force-fail` が PID 再利用で生存に見える stuck run を明示的に failed へ変換し、
+  retry 経路を開く。（2026-07-27 done）
 - [ ] P2-5: タイムアウトの SIGKILL エスカレーションと孤児 Codex プロセスの残留対策。
 
 ### Phase 3 — トークン経済（従目的）

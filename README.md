@@ -319,6 +319,10 @@ attempt logs. A caller timeout that terminates the controller is an interruption
 Codex made no edits. Inspect the worktree and surviving child processes before retrying.
 
 `status` detects an active state whose controller process disappeared and converts it to `failed`.
+When PID reuse makes a dead controller look alive and the run stays stuck in an active state,
+`status --run <id> --force-fail` performs the same conversion explicitly; verify no Codex process
+from that run is still running before retrying, because a survivor would race the retry in the same
+worktree.
 A failed read-only compiler call can be retried with `compile --run <id> --retry`. When the failure
 is a schema or citation rejection that Claude can fix by hand, `revalidate --run <id>` seeds
 `brief.json` from the raw compiler output if it does not exist yet, re-runs the full validation and

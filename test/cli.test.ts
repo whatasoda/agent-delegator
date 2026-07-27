@@ -533,6 +533,41 @@ describe("agent-delegator CLI", () => {
     expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(4);
   });
 
+  test("force-fails a stuck active run whose controller PID was recycled", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    await run(
+      ["compile", "--objective", "Force-fail check", "--transcript", transcript, "--runs-dir", runs, "--run-id", "stuck"],
+      repo,
+      env,
+    );
+    await run(["approve", "--run", "stuck", "--runs-dir", runs, "--allow-unresolved"], repo, env);
+    await run(["implement", "--run", "stuck", "--runs-dir", runs], repo, env);
+
+    const statePath = join(runs, "stuck", "state.json");
+    const state = JSON.parse(await readFile(statePath, "utf8"));
+    state.status = "implementing";
+    state.activeOperation = "implement";
+    state.controllerPid = 1;
+    await writeFile(statePath, JSON.stringify(state, null, 2));
+
+    const unforced = await run(["status", "--run", "stuck", "--runs-dir", runs], repo, env);
+    expect(JSON.parse(unforced.stdout).status).toBe("implementing");
+
+    const forced = await run(["status", "--run", "stuck", "--runs-dir", runs, "--force-fail"], repo, env);
+    expect(forced.exitCode).toBe(0);
+    const forcedState = JSON.parse(forced.stdout);
+    expect(forcedState.status).toBe("failed");
+    expect(forcedState.failurePhase).toBe("implement");
+
+    const inactive = await run(["status", "--run", "stuck", "--runs-dir", runs, "--force-fail"], repo, env);
+    expect(inactive.exitCode).toBe(1);
+    expect(inactive.stderr).toContain("--force-fail requires an active run");
+
+    const restarted = await run(["implement", "--run", "stuck", "--runs-dir", runs, "--retry"], repo, env);
+    expect(restarted.exitCode).toBe(0);
+    expect(JSON.parse(restarted.stdout).status).toBe("needs-decision");
+  });
+
   test("rechecks approval inputs and Git HEAD before resume", async () => {
     const { repo, runs, transcript, env, log } = await fixture();
     await run(
