@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased] - 2026-07-27
+## [0.1.0-alpha.1] - 2026-07-27
+
+First published version (npm `alpha` dist-tag).
 
 ### Fixed
 
@@ -22,6 +24,8 @@
 - Added `wait --run` to block until a run settles, including stale-controller recovery, as an alternative to repeated status polling.
 - Added the quick-path evidence limits `--max-source-bytes` and `--max-transcript-input-bytes`, with actionable guidance when a limit is exceeded.
 - Added global and command-level `--help` output and global `--version` output.
+- Added a Node-compatible npm launcher that reports the Bun >= 1.3.0 requirement with installation
+  guidance when Bun is missing.
 
 ### Changed
 
@@ -29,3 +33,5 @@
 - Excluded unsuitable glob-expanded and optional evidence sources nonfatally, with exclusion reasons recorded, while keeping explicit required sources strict.
 - Reported checkpoint-capture errors separately in events and CLI output while retaining a valid result and conservatively requiring `--allow-worktree-change` before the next execution.
 - Resolved relative `--context` paths from the invoking shell's working directory, consistently with other path options.
+- Changed the license from `UNLICENSED` to MIT and adopted a public npm `alpha` release channel with
+  an owner-triggered provenance-publishing workflow.

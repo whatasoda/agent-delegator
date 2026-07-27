@@ -28,7 +28,7 @@ artifact with Bun:
 bun install --frozen-lockfile
 bun run package:smoke
 bun pm pack --destination /absolute/private/release-directory
-bun add --global /absolute/private/release-directory/whatasoda-agent-delegator-0.1.0-alpha.0.tgz
+bun add --global /absolute/private/release-directory/whatasoda-agent-delegator-<version>.tgz
 agent-delegator --help
 ```
 

@@ -17,7 +17,7 @@ runtime dependency of the core CLI.
 ## Current package boundary
 
 The package is MIT-licensed and uses the prerelease identity
-`@whatasoda/agent-delegator@0.1.0-alpha.0`, targeting the public npm `alpha` dist-tag
+`@whatasoda/agent-delegator` (0.1.0-alpha series), targeting the public npm `alpha` dist-tag
 (owner decision, 2026-07-27). Its packed artifact contains only:
 
 - the Node-compatible launcher and the Bun bundle exposed as the `agent-delegator` executable;
@@ -42,7 +42,7 @@ stored. Working sessions never publish.
 The initial decisions are:
 
 - repository: `whatasoda/agent-delegator`;
-- package: `@whatasoda/agent-delegator@0.1.0-alpha.0`;
+- package: `@whatasoda/agent-delegator` (0.1.0-alpha series);
 - distribution: reviewed tarballs during trials, then the public npm `alpha` dist-tag — never
   `latest` until the stability conditions in `DESIGN_AND_ROADMAP.md` §8 hold. Note that npm
   publishes are permanent (no unpublish after 72 hours), so alpha versions are cheap to add but
