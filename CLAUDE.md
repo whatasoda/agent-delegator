@@ -25,7 +25,9 @@ repository's scripts.
 - Compilation stays read-only; implementation/resume stay workspace-write.
 - Do not weaken citation, path-containment, integrity, retry, or approval guards to make a trial pass.
 - Runtime package contents are allowlisted and verified by `scripts/package-smoke.ts`.
-- Keep `private: true` and `UNLICENSED` until the owner explicitly authorizes registry/public release.
+- License is MIT and the package targets a public npm `alpha` dist-tag (owner decision, 2026-07-27).
+  Actual registry publishes happen only through the owner-triggered release workflow; never publish
+  from a working session.
 - Commit, push, PR, GitHub release, registry publish, and deployment require explicit main-agent or
   user ownership; delegated Codex runs never perform them.
 

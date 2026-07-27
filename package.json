@@ -2,17 +2,21 @@
   "name": "@whatasoda/agent-delegator",
   "version": "0.1.0-alpha.0",
   "description": "Claude-main to Codex implementation delegation with reviewable evidence and Briefs",
-  "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/whatasoda/agent-delegator.git"
   },
   "type": "module",
   "bin": {
-    "agent-delegator": "dist/agent-delegator"
+    "agent-delegator": "bin/agent-delegator.cjs"
   },
   "files": [
+    "bin/agent-delegator.cjs",
     "dist/agent-delegator",
     "prompts",
     "schemas",

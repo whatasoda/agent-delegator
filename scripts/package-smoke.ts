@@ -37,12 +37,14 @@ try {
   const archive = await run(["tar", "-tzf", tarball], temporaryRoot);
   const entries = archive.stdout.split(/\r?\n/).filter(Boolean);
   for (const required of [
+    "package/bin/agent-delegator.cjs",
     "package/dist/agent-delegator",
     "package/prompts/compile-brief.md",
     "package/prompts/implement.md",
     "package/schemas/brief.schema.json",
     "package/schemas/result.schema.json",
     "package/README.md",
+    "package/LICENSE",
   ]) {
     assert(entries.includes(required), `Packed archive is missing ${required}`);
   }
@@ -123,6 +125,20 @@ process.stdout.write(JSON.stringify({
   );
 
   const installedCli = join(consumer, "node_modules", ".bin", "agent-delegator");
+  // Invoke the launcher through an absolute interpreter path so only `bun` lookup depends on the
+  // restricted PATH; `env node` disappearing as well would mask the message under test.
+  const noBun = Bun.spawnSync([process.execPath, installedCli, "--version"], {
+    cwd: consumer,
+    env: { ...process.env, PATH: "/usr/bin:/bin" },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  assert(noBun.exitCode === 127, "Launcher without Bun on PATH did not exit 127");
+  assert(
+    noBun.stderr.toString().includes("requires Bun"),
+    "Launcher without Bun on PATH did not print the installation instruction",
+  );
+
   const compiled = await run(
     [
       installedCli,

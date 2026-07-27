@@ -43,8 +43,12 @@ trust boundary は維持したまま、委譲元 Claude セッションのトー
 
 ## 非ゴール
 
-public registry release / Claude plugin 化、semantic discovery、Windows 対応、Codex 以外の
-implementer。`DESIGN_AND_ROADMAP.md` の「Later」項目は本サイクルの対象外。
+semantic discovery、Windows 対応、Codex 以外の implementer。`DESIGN_AND_ROADMAP.md` の「Later」
+項目は本サイクルの対象外。
+
+※ 当初は public release / plugin 化も非ゴールだったが、2026-07-27 のオーナー判断（public 前提・
+MIT ライセンス）により Phase D としてスコープに追加した。実際の registry publish・push は
+オーナー明示トリガーのみで行う。
 
 ## 完了判定
 
@@ -118,6 +122,18 @@ implementer。`DESIGN_AND_ROADMAP.md` の「Later」項目は本サイクルの�
   「Run not found」で案内、`--context` の相対パス基準を他オプションと同じ shell cwd に統一、
   usage に未記載オプションを補完。（2026-07-27 done）
 
+### Phase D — public 配布（2026-07-27 スコープ追加）
+
+- [x] D-1: MIT ライセンス切替と public-alpha パッケージメタデータ（LICENSE、`license: MIT`、
+  `publishConfig: { access: public, tag: alpha }`、README の互換性表明）。（2026-07-27 done）
+- [x] D-2: node 互換 bin ラッパ（Bun 不在時に導線つきで即死、npm/npx ユーザーの意味不明な失敗を
+  排除）。package-smoke が同梱と導線メッセージを検証。（2026-07-27 done）
+- [ ] D-3: owner トリガーの npm alpha release workflow（Trusted Publishing / provenance、
+  リリースゲート組込み）と DISTRIBUTION.md / DESIGN_AND_ROADMAP §8 の方針改訂。
+- [ ] D-4: 公開の実行 — オーナー操作（npmjs.com の Trusted Publisher 設定＋workflow 起動）。
+  T-1 trial を 1〜2 本先行させ、schema の揺れを公開前に吸収することを推奨。
+- [ ] D-5: public marketplace 化＋thin plugin（operator skill の配布）。agent-extensions と同型。
+
 ### Trial — 実業務リポジトリ検証
 
 - [ ] T-1: Phase 1〜2 完了後、対象リポジトリを選定し実タスク trial を開始する（開始時にオーナーと
@@ -127,3 +143,5 @@ implementer。`DESIGN_AND_ROADMAP.md` の「Later」項目は本サイクルの�
 ## 変更履歴
 
 - 2026-07-27: 初版。実利用調査の結果とオーナー合意（主眼・検証の場・権限・課金）を反映。
+- 2026-07-27: オーナー判断により public 配布（MIT・npm alpha・marketplace/plugin）を Phase D として
+  スコープ追加。非ゴールから public release / plugin 化を除外。

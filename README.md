@@ -17,10 +17,12 @@ roadmap are maintained in [`docs/DESIGN_AND_ROADMAP.md`](./docs/DESIGN_AND_ROADM
 core-package, Claude-plugin, and standalone release plan is in
 [`docs/DISTRIBUTION.md`](./docs/DISTRIBUTION.md).
 
-## Private trial installation
+## Installation
 
-The package is prerelease, private, and `UNLICENSED`; it is not published to a registry. Build and
-inspect a versioned tarball from a clean checkout, then install that reviewed artifact with Bun:
+The package is MIT-licensed prerelease software. The planned public channel is the npm `alpha`
+dist-tag (`bun add --global @whatasoda/agent-delegator@alpha` once published); until the first
+publish, build and inspect a versioned tarball from a clean checkout, then install that reviewed
+artifact with Bun:
 
 ```sh
 bun install --frozen-lockfile
@@ -31,7 +33,13 @@ agent-delegator --help
 ```
 
 macOS arm64 with Bun 1.3.13 is the currently validated distribution target. Other platforms remain
-unverified rather than implicitly supported.
+unverified rather than implicitly supported. The runtime requires Bun >= 1.3.0; the npm bin is a
+Node-compatible launcher that prints an actionable message when Bun is absent.
+
+Alpha compatibility statement: the CLI currently reads and writes run `state.json` schema version 1,
+`run-events.jsonl` schema version 1, Brief/result schema version 1, and approval schema version 3.
+During the alpha series these schemas may change between versions without a migration path; run
+directories are repository-local working state, not durable archives.
 
 ## Pipeline
 
