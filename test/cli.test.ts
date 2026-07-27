@@ -468,6 +468,39 @@ describe("agent-delegator CLI", () => {
     expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(2);
   });
 
+  test("revalidates a hand-fixed Brief without another compiler call", async () => {
+    const { repo, runs, transcript, env, log } = await fixture();
+    const compile = await run(
+      ["compile", "--objective", "Revalidate check", "--transcript", transcript, "--runs-dir", runs, "--run-id", "revalidate"],
+      repo,
+      { ...env, FAKE_CODEX_CONSTRAINT_QUOTE: "a fabricated quote that matches nothing" },
+    );
+    expect(compile.exitCode).toBe(1);
+    expect(compile.stderr).toContain("cites invalid evidence");
+
+    const seeded = await run(["revalidate", "--run", "revalidate", "--runs-dir", runs], repo, env);
+    expect(seeded.exitCode).toBe(1);
+    expect(seeded.stderr).toContain("cites invalid evidence");
+
+    const briefPath = join(runs, "revalidate", "brief.json");
+    const brief = JSON.parse(await readFile(briefPath, "utf8"));
+    brief.constraints[0].sources[0].quote = "must wait for the exact greeting wording";
+    await writeFile(briefPath, JSON.stringify(brief, null, 2));
+
+    const revalidated = await run(["revalidate", "--run", "revalidate", "--runs-dir", runs], repo, env);
+    expect(revalidated.exitCode).toBe(0);
+    expect(JSON.parse(revalidated.stdout).status).toBe("compiled");
+
+    const approved = await run(
+      ["approve", "--run", "revalidate", "--runs-dir", runs, "--allow-unresolved"],
+      repo,
+      env,
+    );
+    expect(approved.exitCode).toBe(0);
+    expect(JSON.parse(approved.stdout).status).toBe("approved");
+    expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(1);
+  });
+
   test("rechecks approval inputs and Git HEAD before resume", async () => {
     const { repo, runs, transcript, env, log } = await fixture();
     await run(

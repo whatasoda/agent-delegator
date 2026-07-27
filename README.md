@@ -126,6 +126,7 @@ From the repository root:
 
 ```sh
 bun run agent-delegator resolve-transcript --json
+bun run agent-delegator revalidate --run <run-id>
 bun run agent-delegator approve --run <run-id>
 bun run agent-delegator implement --run <run-id>
 bun run agent-delegator resume \
@@ -318,7 +319,12 @@ attempt logs. A caller timeout that terminates the controller is an interruption
 Codex made no edits. Inspect the worktree and surviving child processes before retrying.
 
 `status` detects an active state whose controller process disappeared and converts it to `failed`.
-A failed read-only compiler call can be retried with `compile --run <id> --retry`. A failed
+A failed read-only compiler call can be retried with `compile --run <id> --retry`. When the failure
+is a schema or citation rejection that Claude can fix by hand, `revalidate --run <id>` seeds
+`brief.json` from the raw compiler output if it does not exist yet, re-runs the full validation and
+deterministic citation repairs without a Codex call, and returns the run to `compiled` once the
+edited Brief passes. Validation is never relaxed by this path; it only removes the cost of paying
+for another compiler call to fix what Claude already knows how to correct. A failed
 workspace-write call requires `implement --retry` or `resume --retry`; inspect the repository first,
 and add `--allow-worktree-change` only when the partial diff is understood. Retries are never
 automatic because a prior implementer may already have changed files.

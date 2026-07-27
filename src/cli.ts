@@ -107,6 +107,7 @@ const argumentSpecs: Record<string, ArgumentSpec> = {
     textValues: ["--objective"],
     guardedFlags: ["--allow-latest-fallback", "--no-redact"],
   },
+  revalidate: { values: ["--run", "--runs-dir"] },
   approve: {
     values: ["--run", "--runs-dir", "--by"],
     flags: ["--allow-unresolved", "--allow-base-change"],
@@ -760,6 +761,81 @@ async function commandCompile(args: string[]): Promise<void> {
   }
 }
 
+async function commandRevalidate(args: string[]): Promise<void> {
+  const runDir = await resolveRun(args, process.cwd());
+  const state = await readRunState(runDir);
+  const revalidatable = state.status === "compiled" ||
+    (state.status === "failed" && state.failurePhase === "compile");
+  if (!revalidatable) {
+    throw new Error(
+      `revalidate requires a compiled run or a failed compile; current status is ${state.status}`,
+    );
+  }
+  const briefPath = join(runDir, "brief.json");
+  const startedAt = Date.now();
+  try {
+    await verifyCollectionAnchor(runDir, state);
+    await verifyEvidenceBundle(runDir, state.repoRoot);
+    if (!(await exists(briefPath))) {
+      const latestAttempt = state.attempts?.compile ?? 0;
+      const generatedPath = join(attemptDirectory(runDir, "compile", latestAttempt), "output.json");
+      if (latestAttempt === 0 || !(await exists(generatedPath))) {
+        throw new Error("brief.json is missing and no compile attempt produced output.json; run compile first");
+      }
+      await writeJson(briefPath, await readJson<unknown>(generatedPath));
+    }
+    const brief = await readJson<unknown>(briefPath);
+    const errors = validateBrief(brief);
+    if (errors.length > 0) throw new Error(`Brief validation failed: ${errors.join("; ")}`);
+    const evidenceBundle = await readJson<EvidenceBundle>(join(runDir, "evidence-bundle.json"));
+    const evidenceSources = await evidenceSourceMap(runDir, evidenceBundle);
+    const sourceRepaired = repairBriefCitationSources(brief as BriefDraft, evidenceSources);
+    const turnRepaired = repairBriefCitationTurns(sourceRepaired.brief, evidenceSources);
+    const validatedBrief = turnRepaired.brief;
+    const evidenceErrors = validateBriefEvidence(validatedBrief, evidenceSources);
+    if (evidenceErrors.length > 0) {
+      throw new Error(`Brief cites invalid evidence: ${evidenceErrors.join("; ")}`);
+    }
+    await writeJson(briefPath, validatedBrief);
+    await writeText(join(runDir, "brief.md"), renderBrief(validatedBrief));
+    state.status = "compiled";
+    state.failure = null;
+    state.failurePhase = null;
+    await writeRunState(runDir, state);
+    await appendRunEvent(runDir, {
+      stage: "compile", event: "completed", attempt: null, duration_ms: Date.now() - startedAt,
+      model: null, run_status: state.status, failure_category: null,
+      message: "manual revalidation without a compiler call", usage: null,
+      metrics: {
+        unresolved_item_count: validatedBrief.unresolved_items.length,
+        citation_count: briefCitationCount(validatedBrief),
+        citation_source_correction_count: sourceRepaired.corrections.length,
+        citation_turn_correction_count: turnRepaired.corrections.length,
+        codex_invoked: false,
+      },
+      artifacts: ["brief.json", "brief.md", "state.json"],
+    });
+    print({
+      run_id: state.runId,
+      run_dir: runDir,
+      status: state.status,
+      brief: briefPath,
+      rendered_brief: join(runDir, "brief.md"),
+      unresolved_items: validatedBrief.unresolved_items.length,
+      citation_source_corrections: sourceRepaired.corrections.length,
+      citation_turn_corrections: turnRepaired.corrections.length,
+    });
+  } catch (error) {
+    await appendRunEvent(runDir, {
+      stage: "compile", event: "failed", attempt: null, duration_ms: Date.now() - startedAt,
+      model: null, run_status: state.status, failure_category: classifyFailure(error, "compile"),
+      message: error instanceof Error ? error.message : String(error), usage: null,
+      metrics: { codex_invoked: false }, artifacts: [],
+    });
+    throw error;
+  }
+}
+
 async function commandApprove(args: string[]): Promise<void> {
   const runDir = await resolveRun(args, process.cwd());
   const state = await readRunState(runDir);
@@ -1202,6 +1278,7 @@ function usage(): string {
   agent-delegator resolve-transcript [--cwd <path>] [--json] [--allow-latest-fallback]
   agent-delegator collect (--context <path> | --objective <text>) [source options]
   agent-delegator compile (--run <id> | --context <path> | --objective <text>) [--model <model>] [--dry-run]
+  agent-delegator revalidate --run <id-or-path>
   agent-delegator approve --run <id-or-path> [--by claude] [--allow-unresolved] [--allow-base-change]
   agent-delegator implement --run <id-or-path> [--model <model>] [--retry]
   agent-delegator resume --run <id-or-path> (--message <text> | --addendum <path>) [--retry]
@@ -1239,6 +1316,9 @@ async function main(): Promise<void> {
       break;
     case "collect":
       await commandCollect(args);
+      break;
+    case "revalidate":
+      await commandRevalidate(args);
       break;
     case "approve":
       await commandApprove(args);
