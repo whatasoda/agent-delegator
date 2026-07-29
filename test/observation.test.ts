@@ -118,8 +118,61 @@ describe("run observation", () => {
     expect(renderObservationReport(report)).toContain("Controller interactions tracked: 0 (gate rejections: 0, failed Codex calls: 0)");
   });
 
+  test("counts only delegation-gate failures as gate rejections", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-delegator-gates-"));
+    temporaryDirectories.push(root);
+    const runsDir = join(root, "runs");
+    const runDir = join(runsDir, "gated");
+    await mkdir(runDir, { recursive: true });
+    await writeRunState(runDir, legacyState("gated", root));
+    const base = {
+      attempt: 1 as const,
+      duration_ms: 5 as const,
+      model: null,
+      usage: null,
+      artifacts: [] as string[],
+    };
+    await appendRunEvent(runDir, {
+      ...base, stage: "compile", event: "failed", run_status: "failed",
+      failure_category: "validation", message: "Brief validation failed",
+      metrics: { codex_invoked: false },
+    });
+    await appendRunEvent(runDir, {
+      ...base, stage: "evaluate", event: "failed", run_status: "failed",
+      failure_category: "unknown", message: "Evaluation /implementation_quality must be equal to one of the allowed values",
+      metrics: {},
+    });
+    await appendRunEvent(runDir, {
+      ...base, stage: "implement", event: "failed", run_status: "failed",
+      failure_category: "codex-timeout", message: "Codex exceeded the timeout",
+      metrics: { codex_invoked: true },
+    });
+
+    const report = await buildObservationReport(runsDir);
+    expect(report.runs[0]?.controller_cost).toMatchObject({
+      gate_rejections: 1,
+      codex_failures: 1,
+    });
+  });
+
   test("rejects incomplete Claude evaluations and corrupt event streams", async () => {
     expect(validateEvaluationInput({ schema_version: "1", evaluator: "claude" }).length).toBeGreaterThan(0);
+    const enumErrors = validateEvaluationInput({
+      schema_version: "1",
+      evaluator: "claude",
+      outcome: "accepted-as-is",
+      brief_quality: "accurate",
+      implementation_quality: "looks-good",
+      communication_quality: "efficient",
+      verification: "passed",
+      ratings: { requirements_fidelity: 5, implementation_quality: 5, communication_efficiency: 5 },
+      issue_categories: [],
+      notes: "",
+      tags: [],
+    });
+    expect(enumErrors.join("\n")).toContain(
+      "/implementation_quality must be equal to one of the allowed values (allowed: accepted-as-is, minor-fixes, major-fixes, rejected, not-completed)",
+    );
     const runDir = await mkdtemp(join(tmpdir(), "agent-delegator-observation-"));
     temporaryDirectories.push(runDir);
     await writeFile(join(runDir, "run-events.jsonl"), "{}\n");

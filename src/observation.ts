@@ -80,7 +80,11 @@ const validateEvaluationInputSchema = ajv.compile<EvaluationInput>(evaluationInp
 const validateEvaluationSchema = ajv.compile<EvaluationRecord>(evaluationSchema);
 
 function schemaErrors(label: string, errors: typeof validateRunEventSchema.errors): string[] {
-  return (errors ?? []).map((error) => `${label} ${error.instancePath || "/"} ${error.message ?? "is invalid"}`);
+  return (errors ?? []).map((error) => {
+    const allowedValues = error.keyword === "enum" ? (error.params as { allowedValues?: unknown[] }).allowedValues : undefined;
+    const allowed = Array.isArray(allowedValues) ? ` (allowed: ${allowedValues.join(", ")})` : "";
+    return `${label} ${error.instancePath || "/"} ${error.message ?? "is invalid"}${allowed}`;
+  });
 }
 
 export function validateEvaluationInput(value: unknown): string[] {
@@ -339,8 +343,13 @@ export async function buildRunObservation(runDir: string): Promise<RunObservatio
         event.event === "started" ||
         event.event === "recovered" ||
         (event.stage === "compile" && event.attempt === null)).length,
+      // Only delegation-gate outcomes (brief/citation validation, integrity, worktree drift)
+      // count as rejections; CLI input mistakes such as evaluate schema errors are not gates
+      // and would pollute the gate-false-fire completion criterion.
       gate_rejections: events.filter((event) =>
-        event.event === "failed" && event.metrics.codex_invoked !== true).length,
+        event.event === "failed" && event.metrics.codex_invoked !== true &&
+        event.failure_category !== null &&
+        ["validation", "integrity", "repository-drift"].includes(event.failure_category)).length,
       codex_failures: events.filter((event) =>
         event.event === "failed" && event.metrics.codex_invoked === true).length,
       review_surface_bytes: {
