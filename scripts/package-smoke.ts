@@ -152,7 +152,12 @@ process.stdout.write(JSON.stringify({
       "package-smoke",
     ],
     fixture,
-    { ...process.env, PATH: `${binDirectory}${delimiter}${process.env.PATH ?? ""}` },
+    {
+      ...process.env,
+      PATH: `${binDirectory}${delimiter}${process.env.PATH ?? ""}`,
+      // Keep the smoke run out of the developer's machine-level registry.
+      AGENT_DELEGATOR_REGISTRY_PATH: join(fixture, "registry.jsonl"),
+    },
   );
   assert(JSON.parse(compiled.stdout).status === "compiled", "Installed CLI did not compile successfully");
   const metadata = JSON.parse(

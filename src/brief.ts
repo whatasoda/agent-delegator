@@ -119,7 +119,8 @@ const forbiddenDelegatedActions = [
   },
   {
     action: "deploy",
-    pattern: /\b(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?deploy\b|\b(?:wrangler|vercel)\s+deploy\b|\b(?:must|shall|required\s+to)\s+deploy\b|デプロイ(?:する|して|せよ|を実行)/giu,
+    // (?![:-]) keeps deploy:check / deploy-preview style script names out of the match.
+    pattern: /\b(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?deploy\b(?![:-])|\b(?:wrangler|vercel)\s+deploy\b(?![:-])|\b(?:must|shall|required\s+to)\s+deploy\b|デプロイ(?:する|して|せよ|を実行)/giu,
   },
 ] as const;
 
@@ -127,7 +128,9 @@ function isNegatedAction(text: string, start: number, end: number): boolean {
   const before = text.slice(Math.max(0, start - 48), start).toLowerCase();
   const after = text.slice(end, Math.min(text.length, end + 32)).toLowerCase();
   return /(?:do\s+not|don't|must\s+not|never|without)[^.!?;\n]{0,48}$/.test(before) ||
-    /(?:禁止|行わない|実行しない|しない|せず|不要)/u.test(after);
+    /(?:禁止|行わない|実行しない|しない|せず|不要)/u.test(after) ||
+    // A --dry-run invocation validates without performing the action (ws4 trial false-fire, 2026-07-28).
+    /--dry-?run\b/.test(after);
 }
 
 function forbiddenAction(text: string): string | null {

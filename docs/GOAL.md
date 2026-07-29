@@ -149,8 +149,10 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
 - [ ] P5-3: Codex preflight — 未インストールは raw な `spawn codex ENOENT`、イベント形式ドリフトは
   無警告で resume/テレメトリを失う。バイナリパスも設定不可。最小バージョン方針とあわせて。
 - [ ] P5-4: `brief.md` の手編集が approve で無言破棄される（正は `brief.json`）。警告か案内を出す。
-- [ ] P5-5: forbidden-action lint の誤検知 — `deploy:check` 等のスクリプト名や 48 文字超の否定
-  文脈で正当な Brief が落ちる。
+- [x] P5-5: forbidden-action lint の誤検知 — `deploy:check` 等のスクリプト名や 48 文字超の否定
+  文脈で正当な Brief が落ちる。（2026-07-29 done: ws4 trial で `wrangler deploy --dry-run` が
+  compile validation を誤発火させ Codex compile 1回分を破棄する実害を確認。--dry-run の否定扱いと
+  スクリプト名サフィックス除外を修正・テスト固定。48 文字超の否定文脈は実害未観測のため据え置き）
 - [ ] P5-6: 観測の整合 — resume retry で decision-ledger が重複／resume が新 thread id を保存
   しない／torn `run-events.jsonl` 行で `status --observation` が死ぬ／`writeJsonAtomic` の
   tmp 残骸掃除。
@@ -160,7 +162,10 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
   64 MiB `maxBuffer` 超過時の raw エラー（ゲート時に対処案内なし）。
 - [ ] P5-9: CLI 入力の厳密化 — 数値オプションの `parseInt` が末尾ゴミを黙認
   （`--timeout-seconds=60m` → 60 秒）、no-op の `--no-latest-fallback`、approve 系への `--cwd`、
-  `--transcript`＋`--session-id` の整合検証、evaluate スキーマエラーへの許容値一覧表示。
+  `--transcript`＋`--session-id` の整合検証、~~evaluate スキーマエラーへの許容値一覧表示~~。
+  （2026-07-29: 許容値一覧表示のみ対応済み — trial 2 run で計4回の enum ミスを確認。あわせて
+  evaluate 入力エラーが `controller_cost.gate_rejections` に混入して完了判定 i を汚す計測バグを
+  修正し、gate_rejections は validation / integrity / repository-drift のみ数える）
 - [ ] P5-10: 環境エッジ — `delegatorIdentity` が $HOME を git repo とする環境（yadm 等）で全走査、
   legacy transcript の sidechain 行が turn に混入。
 - [ ] P5-11: ドキュメント整合 — README の pipeline 例が `bun run agent-delegator`（checkout 内
@@ -169,15 +174,47 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
   runner 追加（検証済み表明と CI の乖離）、実 Codex を使う定期 acceptance の置き場所。
 - [ ] P5-13: prompts/implement.md が network-blocked sandbox での検証実行を要求し、ネットワーク
   依存の検証が予見可能に `blocked` になる（Brief 側で検証の実行環境を明示する規約に）。
+- [x] P5-14: run 履歴の横断確認と保全（2026-07-29 trial で顕在化）— `report` が1 runs-dir 単位の
+  ため全 trial の集計が手作業になる。run 作成時にマシンレベル registry
+  （`~/.agent-delegator/registry.jsonl`、`AGENT_DELEGATOR_REGISTRY_PATH` で上書き）へ best-effort
+  追記し `report --all` で横断集計する。（2026-07-29 done: 既存 13 run はバックフィル済み、消えた
+  runs dir は unavailable 表示。worktree 削除前の retention 手順は P5-12 側に残す）
+- [ ] P5-15: forbidden-action lint の preflight — 誤発火・正当発火とも検出が「Codex compile 完了後」
+  のため、拒否1回につき compile 課金1回分が破棄される（ws4 trial で実測）。objective / 検証項目の
+  テキストは collect 時点で既知なので、Codex 呼び出し前に同じ lint を preflight 実行して警告する。
+- [ ] P5-16: citation の paraphrase 全損の診断 — source-id 自動修復は「引用がちょうど1つの別ソースに
+  出現する」場合のみ働く。どのソースにも出現しない引用（compiler の言い換え生成。ws4 trial で2件）は
+  手動 brief.json 修正が必要で、診断に最近傍候補のヒントがない。revalidate 経路自体は機能した。
+- [ ] P5-17: codex-timeout の salvage 導線 — 既定 30 分 timeout が large タスクで不足（ws4 trial:
+  worktree に完成 diff が残った状態で timeout 判定→run は failed のまま・当該呼び出しの usage
+  telemetry も欠落）。失敗メッセージから worktree diff の生存と回収手順（diff レビュー /
+  `implement --retry`）へ誘導し、SKILL.md に complexity に応じた `--timeout-seconds` 指針を書く。
+  timeout 設定 1800s に対し failed イベントが 2500s 時点だった kill/drain の 700s 超過も要調査。
+- [ ] P5-18: salvage 後の終端状態 — evaluate が accepted でも run status が `failed` のままで、
+  report の `failed_runs` が「成果物を回収できた run」を失敗として数える。評価結果を summary に
+  反映するか、salvaged 相当の終端状態を検討。
+- [ ] P5-19: モデル・版数の観測欠落 — 全 trial run で `compilerModel` / `implementationModel` が
+  null（report の model 内訳が常に unknown）。installed パッケージ実行では `delegatorRevision` も
+  null（build 時に版数を埋め込む）。`status --observation` が objective 全文を state と observation で
+  二重ダンプする観測面の肥大も削る。
 
 ### Trial — 実業務リポジトリ検証
 
 - [ ] T-1: Phase 1〜2 完了後、対象リポジトリを選定し実タスク trial を開始する（開始時にオーナーと
   対象を確認）。
 - [ ] T-2: trial 3回連続で完了判定を満たすまで、発生した摩擦をバックログへ還流する。
+  - 2026-07-29 レビュー（4 runs-dir・13 runs を退避のうえ集計。退避先
+    `~/.agent-delegator/harvest/2026-07-29/`）: 実タスク相当は 4 run。
+    dogfood CHANGELOG（2026-07-27）= 完了判定 4項目ともクリア。
+    daifuku PR2b（2026-07-28）= ゲート誤発火1（P5-5 → 修正済み）・フル再実行なし回復○・
+    トークン観測 50%（timeout で implement 分欠落 → P5-17）。
+    dinii 2 run = summary のみ確認（completed 2 / collection failed 1、evaluate 未記録 1）。
+    中身のレビューは業務 config セッションで行う。**連続クリアは 0/3 からリスタート**。
 
 ## 変更履歴
 
 - 2026-07-27: 初版。実利用調査の結果とオーナー合意（主眼・検証の場・権限・課金）を反映。
 - 2026-07-27: オーナー判断により public 配布（MIT・npm alpha・marketplace/plugin）を Phase D として
   スコープ追加。非ゴールから public release / plugin 化を除外。
+- 2026-07-29: 4 runs-dir・13 runs の trial レビュー。P5-5 修正・P5-9 の許容値表示＋gate_rejections
+  計測修正。所見から P5-15〜P5-19 を起票、P5-14 の痛みを確認。T-2 の連続クリアは 0/3 から。

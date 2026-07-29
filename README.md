@@ -156,6 +156,7 @@ bun run agent-delegator evaluate \
   --evaluation=examples/evaluation-input.json
 bun run agent-delegator report --format=markdown
 bun run agent-delegator report --format=json
+bun run agent-delegator report --all --format=markdown
 ```
 
 Model flags are optional. If omitted, Codex uses its configured default. Environment variables let
@@ -273,6 +274,13 @@ observations, not Claude token measurements; they make delegation friction and r
 comparable across runs. Old runs without observation events remain reportable with
 unknown metadata and explicit telemetry gaps. Invalid/corrupt runs are listed instead of silently
 discarded.
+
+Every run is also appended to a machine-level registry
+(`~/.agent-delegator/registry.jsonl`, override with `AGENT_DELEGATOR_REGISTRY_PATH`) so that
+`report --all` can aggregate every registered runs directory across repositories and worktrees in
+one invocation. Registered directories that no longer exist (for example, deleted disposable
+worktrees) are listed as unavailable instead of silently shrinking the aggregate. Runs created
+before the registry existed remain reportable per directory with `--runs-dir`.
 
 Token numbers are observations from Codex JSONL, not inferred billing data. A Codex version that
 does not emit usage remains visible as an uncovered call. The report does not calculate currency

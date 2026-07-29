@@ -80,7 +80,11 @@ const validateEvaluationInputSchema = ajv.compile<EvaluationInput>(evaluationInp
 const validateEvaluationSchema = ajv.compile<EvaluationRecord>(evaluationSchema);
 
 function schemaErrors(label: string, errors: typeof validateRunEventSchema.errors): string[] {
-  return (errors ?? []).map((error) => `${label} ${error.instancePath || "/"} ${error.message ?? "is invalid"}`);
+  return (errors ?? []).map((error) => {
+    const allowedValues = error.keyword === "enum" ? (error.params as { allowedValues?: unknown[] }).allowedValues : undefined;
+    const allowed = Array.isArray(allowedValues) ? ` (allowed: ${allowedValues.join(", ")})` : "";
+    return `${label} ${error.instancePath || "/"} ${error.message ?? "is invalid"}${allowed}`;
+  });
 }
 
 export function validateEvaluationInput(value: unknown): string[] {
@@ -237,6 +241,7 @@ export async function recordEvaluation(runDir: string, state: RunState, input: E
 export interface RunObservationSummary {
   schema_version: "1";
   run_id: string;
+  runs_dir?: string;
   status: RunStatus;
   objective: string;
   metadata: TaskMetadata;
@@ -339,8 +344,13 @@ export async function buildRunObservation(runDir: string): Promise<RunObservatio
         event.event === "started" ||
         event.event === "recovered" ||
         (event.stage === "compile" && event.attempt === null)).length,
+      // Only delegation-gate outcomes (brief/citation validation, integrity, worktree drift)
+      // count as rejections; CLI input mistakes such as evaluate schema errors are not gates
+      // and would pollute the gate-false-fire completion criterion.
       gate_rejections: events.filter((event) =>
-        event.event === "failed" && event.metrics.codex_invoked !== true).length,
+        event.event === "failed" && event.metrics.codex_invoked !== true &&
+        event.failure_category !== null &&
+        ["validation", "integrity", "repository-drift"].includes(event.failure_category)).length,
       codex_failures: events.filter((event) =>
         event.event === "failed" && event.metrics.codex_invoked === true).length,
       review_surface_bytes: {
@@ -356,6 +366,8 @@ export async function buildRunObservation(runDir: string): Promise<RunObservatio
 export interface ObservationReport {
   schema_version: "1";
   generated_at: string;
+  runs_dirs?: string[];
+  unavailable_runs_dirs?: string[];
   summary: {
     runs: number;
     evaluated: number;
@@ -430,17 +442,29 @@ function rating(run: RunObservationSummary, field: string): number | null {
   return typeof value === "number" ? value : null;
 }
 
-export async function buildObservationReport(runsDir: string): Promise<ObservationReport> {
-  const entries = await readdir(runsDir, { withFileTypes: true }).catch(() => []);
+export async function buildObservationReport(runsDirInput: string | string[]): Promise<ObservationReport> {
+  const multi = Array.isArray(runsDirInput);
+  const runsDirs = multi ? runsDirInput : [runsDirInput];
   const runs: RunObservationSummary[] = [];
   const invalid: { run_dir: string; error: string }[] = [];
-  for (const entry of entries.filter((item) => item.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
-    const runDir = join(runsDir, entry.name);
-    try {
-      await access(join(runDir, "state.json"));
-      runs.push(await buildRunObservation(runDir));
-    } catch (error) {
-      invalid.push({ run_dir: runDir, error: error instanceof Error ? error.message : String(error) });
+  const unavailable: string[] = [];
+  for (const runsDir of runsDirs) {
+    const entries = await readdir(runsDir, { withFileTypes: true }).catch(() => null);
+    if (entries === null) {
+      // A registered dir that no longer exists usually means a deleted disposable
+      // worktree; surfacing it beats silently shrinking the aggregate.
+      if (multi) unavailable.push(runsDir);
+      continue;
+    }
+    for (const entry of entries.filter((item) => item.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
+      const runDir = join(runsDir, entry.name);
+      try {
+        await access(join(runDir, "state.json"));
+        const run = await buildRunObservation(runDir);
+        runs.push(multi ? { ...run, runs_dir: runsDir } : run);
+      } catch (error) {
+        invalid.push({ run_dir: runDir, error: error instanceof Error ? error.message : String(error) });
+      }
     }
   }
   const evaluated = runs.filter((run) => run.evaluation !== null);
@@ -480,6 +504,7 @@ export async function buildObservationReport(runsDir: string): Promise<Observati
   return {
     schema_version: "1",
     generated_at: new Date().toISOString(),
+    ...(multi ? { runs_dirs: runsDirs, unavailable_runs_dirs: unavailable } : {}),
     summary: {
       runs: runs.length,
       evaluated: evaluated.length,
@@ -578,5 +603,21 @@ ${breakdownRows(report.breakdowns.failure_category)}
 | --- | --- | --- | --- | --- | --- | --- |
 ${report.runs.map((run) => `| ${run.run_id} | ${run.metadata.task_type} | ${run.metadata.complexity} | ${run.status} | ${run.brief_json_difference_count ?? "n/a"} | ${run.controller_cost.gate_rejections} | ${String(run.evaluation?.outcome ?? "not-evaluated")} |`).join("\n")}
 
-${report.invalid_runs.length ? `## Invalid runs\n\n${report.invalid_runs.map((item) => `- ${item.run_dir}: ${item.error}`).join("\n")}\n` : ""}`;
+${directoriesSection(report)}${report.invalid_runs.length ? `## Invalid runs\n\n${report.invalid_runs.map((item) => `- ${item.run_dir}: ${item.error}`).join("\n")}\n` : ""}`;
+}
+
+function directoriesSection(report: ObservationReport): string {
+  if (!report.runs_dirs) return "";
+  const unavailable = new Set(report.unavailable_runs_dirs ?? []);
+  const rows = report.runs_dirs.map((dir) =>
+    unavailable.has(dir)
+      ? `| ${dir} | n/a | unavailable |`
+      : `| ${dir} | ${report.runs.filter((run) => run.runs_dir === dir).length} | available |`);
+  return `## Directories
+
+| Runs dir | Runs | Status |
+| --- | ---: | --- |
+${rows.join("\n")}
+
+`;
 }

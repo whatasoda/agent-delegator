@@ -86,6 +86,14 @@ describe("Brief", () => {
     prohibited.verification = ["コミットしないことを確認する"];
     expect(validateBrief(prohibited)).toEqual([]);
 
+    const dryRun = brief();
+    dryRun.verification = ["cd apps/backend && bunx wrangler deploy --dry-run"];
+    expect(validateBrief(dryRun)).toEqual([]);
+
+    const scriptNames = brief();
+    scriptNames.verification = ["bun run deploy:check", "npm run deploy-preview"];
+    expect(validateBrief(scriptNames)).toEqual([]);
+
     const descriptive = brief();
     descriptive.constraints[0]!.rule = "Record the base commit hash in diagnostics";
     expect(validateBrief(descriptive)).toEqual([]);
