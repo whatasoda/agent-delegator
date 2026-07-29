@@ -55,7 +55,9 @@ description: >-
 7. **evaluate**（毎 run）: `examples/evaluation-input.json` の形式で正直に記録:
    `agent-delegator evaluate --run <id> --evaluation=<file>`
    横断集計は `agent-delegator report --format=markdown`（controller_cost の gate_rejections が
-   0 であることが健全性の目安）。
+   0 であることが健全性の目安）。全リポジトリ・全 worktree を跨いだ集計は
+   `agent-delegator report --all --format=markdown`（run 作成時にマシンレベル registry へ自動登録
+   される。消えた worktree の runs dir は unavailable として表示される）。
 
 ## 失敗と回復
 

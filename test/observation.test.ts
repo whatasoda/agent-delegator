@@ -118,6 +118,33 @@ describe("run observation", () => {
     expect(renderObservationReport(report)).toContain("Controller interactions tracked: 0 (gate rejections: 0, failed Codex calls: 0)");
   });
 
+  test("aggregates multiple runs directories and flags unavailable ones", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-delegator-all-"));
+    temporaryDirectories.push(root);
+    const dirA = join(root, "a-runs");
+    const dirB = join(root, "b-runs");
+    const missing = join(root, "deleted-worktree-runs");
+    await mkdir(join(dirA, "run-a"), { recursive: true });
+    await mkdir(join(dirB, "run-b"), { recursive: true });
+    await writeRunState(join(dirA, "run-a"), legacyState("run-a", root));
+    await writeRunState(join(dirB, "run-b"), legacyState("run-b", root));
+
+    const report = await buildObservationReport([dirA, dirB, missing]);
+    expect(report.summary.runs).toBe(2);
+    expect(report.runs_dirs).toEqual([dirA, dirB, missing]);
+    expect(report.unavailable_runs_dirs).toEqual([missing]);
+    expect(report.runs.map((run) => run.runs_dir)).toEqual([dirA, dirB]);
+
+    const rendered = renderObservationReport(report);
+    expect(rendered).toContain("## Directories");
+    expect(rendered).toContain(`| ${dirA} | 1 | available |`);
+    expect(rendered).toContain(`| ${missing} | n/a | unavailable |`);
+
+    const singleDir = await buildObservationReport(dirA);
+    expect(singleDir.runs_dirs).toBeUndefined();
+    expect(singleDir.runs[0]?.runs_dir).toBeUndefined();
+  });
+
   test("counts only delegation-gate failures as gate rejections", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-delegator-gates-"));
     temporaryDirectories.push(root);

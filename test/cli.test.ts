@@ -137,7 +137,12 @@ process.stdout.write(JSON.stringify({
     runs,
     transcript,
     log,
-    env: { PATH: `${bin}:${process.env.PATH ?? ""}`, FAKE_CODEX_LOG: log },
+    env: {
+      PATH: `${bin}:${process.env.PATH ?? ""}`,
+      FAKE_CODEX_LOG: log,
+      // Keep fixture runs out of the developer's machine-level registry.
+      AGENT_DELEGATOR_REGISTRY_PATH: join(root, "registry.jsonl"),
+    },
   };
 }
 
@@ -389,6 +394,14 @@ describe("agent-delegator CLI", () => {
       implementation_quality: 5,
       communication_efficiency: 5,
     });
+
+    const aggregate = await run(["report", "--all", "--format", "json"], repo, env);
+    expect(aggregate.exitCode).toBe(0);
+    const aggregateValue = JSON.parse(aggregate.stdout);
+    expect(aggregateValue.runs_dirs).toEqual([runs]);
+    expect(aggregateValue.unavailable_runs_dirs).toEqual([]);
+    expect(aggregateValue.summary.runs).toBe(1);
+    expect(aggregateValue.runs[0].runs_dir).toBe(runs);
     expect(await readFile(join(runDir, "run-events.jsonl"), "utf8")).toContain('"stage":"evaluate"');
     expect(await readFile(join(runDir, "run-events.jsonl"), "utf8")).toContain(
       '"attempts/compile/001/attempt-metadata.json"',

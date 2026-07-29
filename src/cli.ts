@@ -36,6 +36,7 @@ import {
   renderObservationReport,
   type EvaluationInput,
 } from "./observation.js";
+import { appendRunRegistryEntry, readRegisteredRunsDirs, registryPath } from "./registry.js";
 import { gitValue, repositoryRoot, worktreeFingerprint } from "./repository.js";
 import { type ImplementationResult, validateImplementationResult } from "./result.js";
 import {
@@ -131,7 +132,7 @@ const argumentSpecs: Record<string, ArgumentSpec> = {
   status: { values: ["--run", "--runs-dir"], flags: ["--observation", "--force-fail"] },
   wait: { values: ["--run", "--runs-dir", "--timeout-seconds"] },
   evaluate: { values: ["--run", "--runs-dir", "--evaluation"] },
-  report: { values: ["--cwd", "--runs-dir", "--format"] },
+  report: { values: ["--cwd", "--runs-dir", "--format"], flags: ["--all"] },
   help: {},
   "--help": {},
   "-h": {},
@@ -506,6 +507,7 @@ async function prepareRun(args: string[]): Promise<{ runDir: string; state: RunS
   const runId = option(args, "--run-id") ?? makeRunId();
   const runDir = await createRunDirectory(runsDir, runId);
   const now = new Date().toISOString();
+  await appendRunRegistryEntry({ run_id: runId, runs_dir: runsDir, repo_root: repoRoot, created_at: now });
   const model = option(args, "--model") ?? process.env.AGENT_DELEGATOR_BRIEF_MODEL ?? null;
   const tool = await delegatorIdentity();
   const state: RunState = {
@@ -1367,14 +1369,23 @@ async function commandEvaluate(args: string[]): Promise<void> {
 }
 
 async function commandReport(args: string[]): Promise<void> {
-  const cwd = resolve(option(args, "--cwd") ?? process.cwd());
+  const all = flag(args, "--all");
   const configuredRunsDir = option(args, "--runs-dir");
-  const runsDir = configuredRunsDir
-    ? resolve(configuredRunsDir)
-    : defaultRunsDir(await repositoryRoot(cwd));
+  if (all && configuredRunsDir) throw new Error("--all aggregates the machine-level registry and cannot be combined with --runs-dir");
   const format = option(args, "--format") ?? "markdown";
   if (format !== "markdown" && format !== "json") throw new Error("--format must be markdown or json");
-  const report = await buildObservationReport(runsDir);
+  let report;
+  if (all) {
+    const runsDirs = await readRegisteredRunsDirs();
+    if (!runsDirs.length) throw new Error(`No registered runs directories in ${registryPath()}; runs created by older versions must be reported with --runs-dir`);
+    report = await buildObservationReport(runsDirs);
+  } else {
+    const cwd = resolve(option(args, "--cwd") ?? process.cwd());
+    const runsDir = configuredRunsDir
+      ? resolve(configuredRunsDir)
+      : defaultRunsDir(await repositoryRoot(cwd));
+    report = await buildObservationReport(runsDir);
+  }
   if (format === "json") print(report);
   else process.stdout.write(renderObservationReport(report));
 }
@@ -1391,7 +1402,7 @@ function usage(): string {
   agent-delegator status --run <id-or-path> [--observation] [--force-fail]
   agent-delegator wait --run <id-or-path> [--timeout-seconds <n>]
   agent-delegator evaluate --run <id-or-path> --evaluation <path>
-  agent-delegator report [--runs-dir <dir>] [--format markdown|json]
+  agent-delegator report [--runs-dir <dir> | --all] [--format markdown|json]
   agent-delegator --version
 
 Any command also accepts --help to print this usage.
