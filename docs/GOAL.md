@@ -169,6 +169,10 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
   runner 追加（検証済み表明と CI の乖離）、実 Codex を使う定期 acceptance の置き場所。
 - [ ] P5-13: prompts/implement.md が network-blocked sandbox での検証実行を要求し、ネットワーク
   依存の検証が予見可能に `blocked` になる（Brief 側で検証の実行環境を明示する規約に）。
+- [ ] P5-14: run 履歴の横断確認と保全（2026-07-29 trial で顕在化）— `report` が1 runs-dir 単位の
+  ため全 trial の集計が手作業になる。run 作成時にマシンレベル registry（例:
+  `~/.agent-delegator/registry.jsonl`）へ追記し `report --all` で横断集計する。また履歴が
+  使い捨て worktree の寿命に縛られるため、worktree 削除前の retention 手順（P5-12 と統合検討）。
 
 ### Trial — 実業務リポジトリ検証
 
