@@ -6,14 +6,14 @@ integration, and release actions.
 
 ## Compatibility
 
-Plugin `0.2.0` is verified with core CLI `0.1.0-alpha.3`, Bun 1.3.0 or newer, and a Codex CLI that
+Plugin `0.2.1` is verified with core CLI `0.1.0-alpha.4`, Bun 1.3.0 or newer, and a Codex CLI that
 supports schema-constrained `codex exec` output. The `delegate-codex` skill runs the CLI's `doctor`
 preflight before delegation.
 
 Install the compatible CLI:
 
 ```sh
-bun add --global @whatasoda/agent-delegator@0.1.0-alpha.3
+bun add --global @whatasoda/agent-delegator@0.1.0-alpha.4
 ```
 
 ## Install

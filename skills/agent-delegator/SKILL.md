@@ -22,9 +22,9 @@ description: >-
 
 ## 前提チェック
 
-`agent-delegator --version` が `0.1.0-alpha.3` を返すことを確認してから
+`agent-delegator --version` が `0.1.0-alpha.4` を返すことを確認してから
 `agent-delegator doctor --json` を実行する。CLI が無い、または別バージョンなら
-`bun add --global @whatasoda/agent-delegator@0.1.0-alpha.3`（Bun >= 1.3.0 必須）で、この
+`bun add --global @whatasoda/agent-delegator@0.1.0-alpha.4`（Bun >= 1.3.0 必須）で、この
 operator が検証済みの CLI に揃える。`doctor` が失敗した状態で委譲を開始しない。
 `doctor` の `codex_authentication.authenticated` も確認し、falseなら選択したhome/storeでloginを整える。
 
@@ -118,7 +118,7 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
 | resume の Codex thread 喪失 | `implement --run <id> --retry`（approved Brief から新セッションで再実装） |
 | active のまま固着（PID 再利用等） | Codex プロセスの残存がないことを確認して `status --run <id> --force-fail` |
 | inactive だが repository lock だけ残る | Codex プロセスの残存がないことを確認して `status --run <id> --force-unlock` |
-| detached job が failed / lost | `jobs --id <job-id>` の stdout/stderr と `status --run <id>` を確認し、runの通常のretry手順を使う |
+| detached job が failed / lost | launcher/controllerの消失を含む。`jobs --id <job-id>` の stdout/stderr と `status --run <id>` を確認し、runの通常のretry手順を使う |
 | verify が失敗 | `verificationFailure` と `attempts/verify/*` を確認する。実装runは completed のままなので、原因解消後に `verify` を再実行できる |
 
 ## 規律

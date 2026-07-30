@@ -261,8 +261,8 @@ verification固有のfailureとして記録する。これにより実装品質�
 
 親Claudeの終了耐性のためにapprovalやlockを迂回する別実装経路は作らない。`--detach` は同じCLI
 operationを独立controllerまたはHerdr tabで起動し、既存のrun lock、repository lock、state遷移、
-checkpoint、中断回復をそのまま使う。machine-private job recordはbackend、run、PID/pane、stdout、
-stderr、終了状態だけを保持し、Evidenceやprompt本文を複製しない。
+checkpoint、中断回復をそのまま使う。machine-private job recordはbackend、run、launcher/controller
+PID・pane、stdout、stderr、終了状態だけを保持し、Evidenceやprompt本文を複製しない。
 
 foregroundを後方互換の既定とし、比較的終わりが見える処理は親にぶら下げる。`process` は端末非依存、
 `herdr` はユーザーがterminal sessionを残す運用を選んだ場合、`auto` はHerdr内だけHerdrを選ぶ。

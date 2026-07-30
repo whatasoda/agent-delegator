@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## [0.1.0-alpha.4] - 2026-07-30
+
+### Fixed
+
+- Record the detached launcher PID and classify a job as `lost` when the launcher exits before a
+  controller is recorded, including the pre-command Herdr launch window. A worker now proceeds
+  only after the launcher records `running`, preventing a late worker from executing after loss.
+
 ## [0.1.0-alpha.3] - 2026-07-30
 
 ### Added

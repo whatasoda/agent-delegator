@@ -2765,6 +2765,7 @@ async function launchProcessJob(jobPath: string, job: HeadlessJob, command: stri
       stdio: ["ignore", stdout, stderr],
       env: { ...process.env, AGENT_DELEGATOR_HEADLESS_JOB_PATH: jobPath },
     });
+    job.launcher_pid = null;
     job.controller_pid = child.pid ?? null;
     job.status = "running";
     await writeHeadlessJob(jobPath, job);
@@ -2797,7 +2798,6 @@ async function launchHerdrJob(jobPath: string, job: HeadlessJob, command: string
   job.herdr_workspace_id = workspaceId;
   job.herdr_tab_id = tabId;
   job.herdr_pane_id = paneId;
-  job.status = "running";
   await writeHeadlessJob(jobPath, job);
   try {
     await runHerdr(["pane", "run", paneId, shellQuote(scriptPath)]);
@@ -2805,6 +2805,9 @@ async function launchHerdrJob(jobPath: string, job: HeadlessJob, command: string
     await runHerdr(["tab", "close", tabId]).catch(() => {});
     throw error;
   }
+  job.launcher_pid = null;
+  job.status = "running";
+  await writeHeadlessJob(jobPath, job);
 }
 
 async function commandDetach(command: string, args: string[]): Promise<void> {
@@ -2823,7 +2826,7 @@ async function commandDetach(command: string, args: string[]): Promise<void> {
   const now = new Date().toISOString();
   const job: HeadlessJob = {
     schema_version: "1", id, backend, status: "launching", command, run_id: state.runId,
-    run_dir: runDir, repo_root: state.repoRoot, controller_pid: null,
+    run_dir: runDir, repo_root: state.repoRoot, launcher_pid: process.pid, controller_pid: null,
     herdr_workspace_id: null, herdr_tab_id: null, herdr_pane_id: null,
     created_at: now, updated_at: now, completed_at: null, exit_code: null, error: null,
     stdout_path: join(directory, "stdout.log"), stderr_path: join(directory, "stderr.log"),
@@ -2861,6 +2864,14 @@ async function commandJobs(args: string[]): Promise<void> {
   let jobs = await listHeadlessJobs();
   if (id) jobs = jobs.filter((job) => job.id === id);
   for (const job of jobs) {
+    if (job.status === "launching" && (!job.launcher_pid || !processIsAlive(job.launcher_pid))) {
+      job.status = "lost";
+      job.launcher_pid = null;
+      job.error = "The detached launcher exited before recording a controller; inspect logs and launch the operation again.";
+      job.completed_at = new Date().toISOString();
+      await writeHeadlessJob(headlessJobPath(job.id), job);
+      continue;
+    }
     if (job.status !== "running" || job.backend !== "process" || !job.controller_pid || processIsAlive(job.controller_pid)) {
       continue;
     }
@@ -3062,7 +3073,15 @@ async function main(): Promise<void> {
 
 async function start(): Promise<void> {
   const jobPath = process.env.AGENT_DELEGATOR_HEADLESS_JOB_PATH;
-  if (jobPath) await waitForHeadlessLaunch(jobPath);
+  if (jobPath) {
+    try {
+      await waitForHeadlessLaunch(jobPath);
+    } catch (error) {
+      process.stderr.write(`agent-delegator: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+      return;
+    }
+  }
   try {
     await main();
     if (jobPath) await finishHeadlessJob(

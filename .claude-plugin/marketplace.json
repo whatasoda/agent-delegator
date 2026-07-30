@@ -9,7 +9,7 @@
       "name": "agent-delegator",
       "source": "./plugins/agent-delegator",
       "description": "Delegate observable implementation, verification, autonomous improvement, and read-only research from Claude Code to Codex",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "author": {
         "name": "whatasoda"
       },

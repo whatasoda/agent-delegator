@@ -1341,6 +1341,56 @@ describe("agent-delegator CLI", () => {
     });
   });
 
+  test("marks a detached job lost when its launcher exits before recording a controller", async () => {
+    const { repo, runs, env } = await fixture();
+    const headlessDir = join(runs, "headless-jobs");
+    const jobDir = join(headlessDir, "orphaned-launch");
+    await mkdir(jobDir, { recursive: true });
+    const exited = Bun.spawn(["true"]);
+    await exited.exited;
+    const now = new Date().toISOString();
+    await writeFile(join(jobDir, "job.json"), JSON.stringify({
+      schema_version: "1",
+      id: "orphaned-launch",
+      backend: "process",
+      status: "launching",
+      command: "compile",
+      run_id: "detached-compile",
+      run_dir: join(runs, "detached-compile"),
+      repo_root: repo,
+      launcher_pid: exited.pid,
+      controller_pid: null,
+      herdr_workspace_id: null,
+      herdr_tab_id: null,
+      herdr_pane_id: null,
+      created_at: now,
+      updated_at: now,
+      completed_at: null,
+      exit_code: null,
+      error: null,
+      stdout_path: join(jobDir, "stdout.log"),
+      stderr_path: join(jobDir, "stderr.log"),
+    }));
+    const detachedEnv = { ...env, AGENT_DELEGATOR_HEADLESS_DIR: headlessDir };
+
+    const listed = await run(["jobs", "--id", "orphaned-launch"], repo, detachedEnv);
+    expect(listed.exitCode).toBe(0);
+    expect(JSON.parse(listed.stdout).jobs[0]).toMatchObject({
+      status: "lost",
+      launcher_pid: null,
+      error: "The detached launcher exited before recording a controller; inspect logs and launch the operation again.",
+    });
+    const active = await run(["jobs", "--active"], repo, detachedEnv);
+    expect(JSON.parse(active.stdout).jobs).toHaveLength(0);
+    const lateWorker = await run(
+      ["jobs", "--id", "orphaned-launch"],
+      repo,
+      { ...detachedEnv, AGENT_DELEGATOR_HEADLESS_JOB_PATH: join(jobDir, "job.json") },
+    );
+    expect(lateWorker.exitCode).toBe(1);
+    expect(lateWorker.stderr).toContain("ended as lost before the controller was released");
+  });
+
   test.skipIf(process.env.AGENT_DELEGATOR_HERDR_SMOKE !== "1")(
     "runs a detached existing-run operation in a non-focused Herdr tab",
     async () => {

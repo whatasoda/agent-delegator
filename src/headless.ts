@@ -16,6 +16,7 @@ export interface HeadlessJob {
   run_id: string;
   run_dir: string;
   repo_root: string;
+  launcher_pid?: number | null;
   controller_pid: number | null;
   herdr_workspace_id: string | null;
   herdr_tab_id: string | null;
@@ -86,6 +87,7 @@ export async function finishHeadlessJob(
 ): Promise<void> {
   const job = await readHeadlessJob(path);
   job.status = status;
+  job.launcher_pid = null;
   job.exit_code = exitCode;
   job.error = error;
   job.completed_at = new Date().toISOString();
@@ -96,7 +98,10 @@ export async function waitForHeadlessLaunch(path: string): Promise<void> {
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
     const job = await readHeadlessJob(path);
-    if (job.status !== "launching") return;
+    if (job.status === "running") return;
+    if (job.status !== "launching") {
+      throw new Error(`Headless launch ended as ${job.status} before the controller was released`);
+    }
     await new Promise((resolveWait) => setTimeout(resolveWait, 20));
   }
   throw new Error("Headless launcher did not finish recording the controller");

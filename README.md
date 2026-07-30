@@ -52,11 +52,11 @@ directories are repository-local working state, not durable archives.
 ### Claude Code plugin
 
 The separately versioned thin plugin distributes the operator skill without bundling another CLI.
-Plugin `0.2.0` is verified with core CLI `0.1.0-alpha.3`; install that exact CLI version, then add
+Plugin `0.2.1` is verified with core CLI `0.1.0-alpha.4`; install that exact CLI version, then add
 this public repository as a marketplace:
 
 ```sh
-bun add --global @whatasoda/agent-delegator@0.1.0-alpha.3
+bun add --global @whatasoda/agent-delegator@0.1.0-alpha.4
 claude plugin marketplace add whatasoda/agent-delegator
 claude plugin install agent-delegator@whatasoda-agent-delegator --scope user
 ```
@@ -67,7 +67,7 @@ Run `/reload-plugins` in an existing Claude Code session, then invoke
 ```sh
 claude plugin marketplace update whatasoda-agent-delegator
 claude plugin update agent-delegator@whatasoda-agent-delegator --scope user
-bun add --global @whatasoda/agent-delegator@0.1.0-alpha.3
+bun add --global @whatasoda/agent-delegator@0.1.0-alpha.4
 ```
 
 The plugin checks the exact CLI version and runs `agent-delegator doctor --json` before delegation.
@@ -336,11 +336,11 @@ uses `process`. Each job has a private machine-level record and stdout/stderr lo
 must first use `collect`, then `compile --run ... --detach`, so the job can be associated with a
 known run before the parent exits.
 
-`jobs` reports `launching`, `running`, `completed`, `failed`, or `lost`. A lost process controller
-means it exited without recording completion; inspect its logs and the run's `status`, then use the
-existing operation-specific retry path. Herdr tabs are left open for operator review. cmux was not
-available in the current validated environment; it remains an adapter candidate rather than an
-implicit untested backend.
+`jobs` reports `launching`, `running`, `completed`, `failed`, or `lost`. A lost launcher or process
+controller means it exited without recording the next durable state; inspect its logs and the run's
+`status`, then use the existing operation-specific retry path. Herdr tabs are left open for operator
+review. cmux was not available in the current validated environment; it remains an adapter candidate
+rather than an implicit untested backend.
 
 ## Codex state isolation
 
