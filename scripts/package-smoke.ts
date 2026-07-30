@@ -41,7 +41,11 @@ try {
     "package/dist/agent-delegator",
     "package/prompts/compile-brief.md",
     "package/prompts/implement.md",
+    "package/prompts/iterate.md",
+    "package/prompts/research.md",
     "package/schemas/brief.schema.json",
+    "package/schemas/research-result.schema.json",
+    "package/schemas/iteration-result.schema.json",
     "package/schemas/result.schema.json",
     "package/README.md",
     "package/LICENSE",
@@ -139,6 +143,11 @@ process.stdout.write(JSON.stringify({
     "Launcher without Bun on PATH did not print the installation instruction",
   );
 
+  const smokeEnv = {
+    ...process.env,
+    PATH: `${binDirectory}${delimiter}${process.env.PATH ?? ""}`,
+    AGENT_DELEGATOR_REGISTRY_PATH: join(fixture, "registry.jsonl"),
+  };
   const compiled = await run(
     [
       installedCli,
@@ -152,14 +161,15 @@ process.stdout.write(JSON.stringify({
       "package-smoke",
     ],
     fixture,
-    {
-      ...process.env,
-      PATH: `${binDirectory}${delimiter}${process.env.PATH ?? ""}`,
-      // Keep the smoke run out of the developer's machine-level registry.
-      AGENT_DELEGATOR_REGISTRY_PATH: join(fixture, "registry.jsonl"),
-    },
+    smokeEnv,
   );
   assert(JSON.parse(compiled.stdout).status === "compiled", "Installed CLI did not compile successfully");
+  const history = await run([installedCli, "history", "--format", "json"], consumer, smokeEnv);
+  const historyRuns = JSON.parse(history.stdout).runs;
+  assert(
+    historyRuns.length === 1 && historyRuns[0].run_id === "package-smoke" && historyRuns[0].status === "compiled",
+    "Installed CLI did not retain the machine-level run history",
+  );
   const metadata = JSON.parse(
     await readFile(join(runs, "package-smoke", "attempts", "compile", "001", "attempt-metadata.json"), "utf8"),
   );

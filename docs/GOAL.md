@@ -142,61 +142,68 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
 
 2026-07-27 の実利用調査で検出したが未修正の項目。優先度は trial での遭遇頻度で決める。
 
-- [ ] P5-1: monorepo 対応 — latest-fallback が repo-root cwd 固定で、サブディレクトリ起動の
-  Claude セッションを拾えない。`resolve-transcript --cwd` と `collect` の解決基準の不一致も統一。
-- [ ] P5-2: turn 番号の実用性 — isMeta なハーネス注入エントリが turn として数えられ、可視会話と
-  ズレる。番号を事前確認する手段（`resolve-transcript --turns` 等）もない。
-- [ ] P5-3: Codex preflight — 未インストールは raw な `spawn codex ENOENT`、イベント形式ドリフトは
-  無警告で resume/テレメトリを失う。バイナリパスも設定不可。最小バージョン方針とあわせて。
-- [ ] P5-4: `brief.md` の手編集が approve で無言破棄される（正は `brief.json`）。警告か案内を出す。
+- [x] P5-1: monorepo 対応 — collect へ invoking cwd を明示的に渡し、latest fallback と
+  `resolve-transcript --cwd` の解決基準を統一。サブディレクトリ fixture で固定。（2026-07-30 done）
+- [x] P5-2: turn 番号の実用性 — isMeta / legacy sidechain を除外し、redacted preview を返す
+  `resolve-transcript --turns` を追加。（2026-07-30 done）
+- [x] P5-3: Codex preflight — `doctor` で版数/command/path を検査し、ENOENT を導線付きに変換、
+  `AGENT_DELEGATOR_CODEX_COMMAND` を追加。malformed event は stderr に compatibility warning を残す。
+  alpha 中は schema output を feature probe とし Codex 最小版を固定しない。（2026-07-30 done）
+- [x] P5-4: `brief.md` の手編集を approve が無言破棄せず、canonical `brief.json` への移植と
+  revalidate を案内して fail closed。（2026-07-30 done）
 - [x] P5-5: forbidden-action lint の誤検知 — `deploy:check` 等のスクリプト名や 48 文字超の否定
   文脈で正当な Brief が落ちる。（2026-07-29 done: ws4 trial で `wrangler deploy --dry-run` が
   compile validation を誤発火させ Codex compile 1回分を破棄する実害を確認。--dry-run の否定扱いと
   スクリプト名サフィックス除外を修正・テスト固定。48 文字超の否定文脈は実害未観測のため据え置き）
-- [ ] P5-6: 観測の整合 — resume retry で decision-ledger が重複／resume が新 thread id を保存
-  しない／torn `run-events.jsonl` 行で `status --observation` が死ぬ／`writeJsonAtomic` の
-  tmp 残骸掃除。
-- [ ] P5-7: 並行実行の安全性 — run/リポジトリ間ロックなし（衝突が「kept changing」等の分かり
-  にくいエラーになる）、`createRunDirectory` の TOCTOU。
-- [ ] P5-8: 大規模 worktree 耐性 — worktreeObservation の per-file 無制限 `Promise.all`、
-  64 MiB `maxBuffer` 超過時の raw エラー（ゲート時に対処案内なし）。
+- [x] P5-6: 観測の整合 — resume/follow-up retry ledger を冪等化し、最新 thread id を失敗時も保存。
+  torn event tail の許容と atomic-write tmp cleanup を追加。（2026-07-30 done）
+- [x] P5-7: 並行実行の安全性 — run lock、同一 checkout の workspace-write lock、stale PID 回復、
+  exclusive mkdir による run 作成を追加。（2026-07-30 done）
+- [x] P5-8: 大規模 worktree 耐性 — untracked diff を4並列に制限し、64 MiB Git 出力上限時に
+  generated/large file の除外・退避を案内。（2026-07-30 done）
 - [ ] P5-9: CLI 入力の厳密化 — 数値オプションの `parseInt` が末尾ゴミを黙認
   （`--timeout-seconds=60m` → 60 秒）、no-op の `--no-latest-fallback`、approve 系への `--cwd`、
   `--transcript`＋`--session-id` の整合検証、~~evaluate スキーマエラーへの許容値一覧表示~~。
   （2026-07-29: 許容値一覧表示のみ対応済み — trial 2 run で計4回の enum ミスを確認。あわせて
   evaluate 入力エラーが `controller_cost.gate_rejections` に混入して完了判定 i を汚す計測バグを
   修正し、gate_rejections は validation / integrity / repository-drift のみ数える）
-- [ ] P5-10: 環境エッジ — `delegatorIdentity` が $HOME を git repo とする環境（yadm 等）で全走査、
-  legacy transcript の sidechain 行が turn に混入。
-- [ ] P5-11: ドキュメント整合 — README の pipeline 例が `bun run agent-delegator`（checkout 内
-  専用形式）のままで、インストール版の `agent-delegator` 形式と不整合。
+  （2026-07-30: 数値末尾ゴミ、approve 系 `--cwd`、transcript/session 同時指定と Context Request
+  併用を修正。後方互換の `--no-latest-fallback` 整理のみ残る）
+- [x] P5-10: 環境エッジ — package root 自体が checkout root の場合だけ delegator fingerprint を
+  取得し、$HOME/yadm 全走査を回避。legacy sidechain も turn から除外。（2026-07-30 done）
+- [x] P5-11: ドキュメント整合 — README の operator 例をインストール版
+  `agent-delegator` 形式へ統一。（2026-07-30 done）
 - [ ] P5-12: 運用ポリシー — run ディレクトリの prune コマンド／retention 方針、CI への macOS
   runner 追加（検証済み表明と CI の乖離）、実 Codex を使う定期 acceptance の置き場所。
-- [ ] P5-13: prompts/implement.md が network-blocked sandbox での検証実行を要求し、ネットワーク
-  依存の検証が予見可能に `blocked` になる（Brief 側で検証の実行環境を明示する規約に）。
+  （2026-07-30: 30/90日 retention baseline と削除前 evaluate/report/history 手順を文書化し、CI を
+  ubuntu + macos-14 matrix 化。自動 prune と定期実 Codex acceptance は明示的な費用/削除方針待ち）
+- [x] P5-13: compiler が workspace-write/no-network で実行可能な検証だけを委譲し、owner-only の
+  deploy/upload/production check は implement/iterate が not-run + risk として返す規約を追加。
+  （2026-07-30 done）
 - [x] P5-14: run 履歴の横断確認と保全（2026-07-29 trial で顕在化）— `report` が1 runs-dir 単位の
   ため全 trial の集計が手作業になる。run 作成時にマシンレベル registry
   （`~/.agent-delegator/registry.jsonl`、`AGENT_DELEGATOR_REGISTRY_PATH` で上書き）へ best-effort
   追記し `report --all` で横断集計する。（2026-07-29 done: 既存 13 run はバックフィル済み、消えた
   runs dir は unavailable 表示。worktree 削除前の retention 手順は P5-12 側に残す）
-- [ ] P5-15: forbidden-action lint の preflight — 誤発火・正当発火とも検出が「Codex compile 完了後」
-  のため、拒否1回につき compile 課金1回分が破棄される（ws4 trial で実測）。objective / 検証項目の
-  テキストは collect 時点で既知なので、Codex 呼び出し前に同じ lint を preflight 実行して警告する。
-- [ ] P5-16: citation の paraphrase 全損の診断 — source-id 自動修復は「引用がちょうど1つの別ソースに
-  出現する」場合のみ働く。どのソースにも出現しない引用（compiler の言い換え生成。ws4 trial で2件）は
-  手動 brief.json 修正が必要で、診断に最近傍候補のヒントがない。revalidate 経路自体は機能した。
-- [ ] P5-17: codex-timeout の salvage 導線 — 既定 30 分 timeout が large タスクで不足（ws4 trial:
+- [x] P5-15: forbidden-action lint の preflight — collect 時に objective を同じ lint で検査して
+  `policy-warnings.json` を残し、compile は課金前に停止。false positive は明示 review 後の
+  `--acknowledge-policy-warning` で継続できるが、外部 action の権限にはならない。（2026-07-30 done）
+- [x] P5-16: citation の paraphrase 全損時、50%以上の longest-contiguous overlap を持つ上位3 turn を
+  診断候補として表示。候補は validation を通さず、手動修正のヒントに限定。（2026-07-29 done）
+- [x] P5-17: codex-timeout の salvage 導線 — 既定 30 分 timeout が large タスクで不足（ws4 trial:
   worktree に完成 diff が残った状態で timeout 判定→run は failed のまま・当該呼び出しの usage
   telemetry も欠落）。失敗メッセージから worktree diff の生存と回収手順（diff レビュー /
   `implement --retry`）へ誘導し、SKILL.md に complexity に応じた `--timeout-seconds` 指針を書く。
-  timeout 設定 1800s に対し failed イベントが 2500s 時点だった kill/drain の 700s 超過も要調査。
-- [ ] P5-18: salvage 後の終端状態 — evaluate が accepted でも run status が `failed` のままで、
-  report の `failed_runs` が「成果物を回収できた run」を失敗として数える。評価結果を summary に
-  反映するか、salvaged 相当の終端状態を検討。
+  timeout/interrupt/dead-controller 回復時に attempt checkpoint を保存し、baseline は更新せず retry を
+  fail closed。skill に complexity 別 timeout 目安も追加。（2026-07-30 done）
+- [x] P5-18: salvage 後の終端状態 — state の失敗履歴は保持しつつ、accepted evaluation のある failed
+  run を `salvaged_runs` として未回復 `failed_runs` から分離。（2026-07-30 done）
 - [ ] P5-19: モデル・版数の観測欠落 — 全 trial run で `compilerModel` / `implementationModel` が
   null（report の model 内訳が常に unknown）。installed パッケージ実行では `delegatorRevision` も
   null（build 時に版数を埋め込む）。`status --observation` が objective 全文を state と observation で
   二重ダンプする観測面の肥大も削る。
+  （2026-07-30: 未指定で実行した slot を `codex-default` として集計し、installed build は Git revision
+  の代わりに artifact SHA prefix で cohort 化。status の重複削減のみ残る）
 
 ### Trial — 実業務リポジトリ検証
 

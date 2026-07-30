@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased
+
+## [0.1.0-alpha.2] - 2026-07-30
+
+### Added
+
+- Added bounded `loop` execution for approved or completed implementation runs, with same-thread
+  review/improvement turns, per-turn approval and worktree guards, convergence/escalation outcomes,
+  iteration artifacts, append-only stop summaries, and autonomous-pattern observation.
+- Added read-only `research` delegation and same-thread `follow-up` dialogue with structured results,
+  per-turn artifacts, retry support, and observation events.
+- Added delegation-pattern and experiment-variant dimensions to run reports.
+- Added a private machine-level state history, cross-directory run-ID resolution, and the `history`
+  command so minimal trial records survive disposable worktrees without copying raw evidence.
+- Added research-aware evaluation values and an optional research-quality rating.
+- Added `doctor` runtime preflight, transcript-turn previews, configurable Codex executable
+  discovery, and repository-relative run lookup through `--cwd`.
+- Added per-run and per-repository operation locks, stale-controller recovery, atomic artifact
+  writes, and torn event-log tail preservation.
+- Added failed-run checkpoint salvage and partial Codex thread/token capture so timed-out or
+  interrupted work remains reviewable and retryable.
+
+### Changed
+
+- Restricted compiler and implementer verification guidance to local, non-mutating checks while
+  leaving integration-owner actions explicitly not run.
+- Bounded untracked-file fingerprint work and streamed file hashing to keep large worktrees within
+  predictable memory and process limits.
+- Expanded packaged smoke coverage to machine-level history and added Linux/macOS CI coverage.
+- Reported failed runs with accepted evaluations as salvaged rather than unrecovered failures, and
+  recorded executable hashes for packaged revisions without Git metadata.
+
+### Fixed
+
+- Rejected ambiguous transcript selectors, malformed or unsafe numeric values, oversized task
+  metadata, and rendered Brief edits that would otherwise be silently discarded.
+- Prevented duplicate decision and research-dialogue entries across retries and retained the latest
+  resumable Codex thread when later result validation fails.
+- Prevented concurrent implementation runs from mutating the same checkout and rejected Git HEAD
+  changes made during delegated workspace-write execution.
+- Preserved valid JSONL records when recovering torn appends and archived the invalid tail before
+  repairing the active event log.
+
 ## [0.1.0-alpha.1] - 2026-07-27
 
 First published version (npm `alpha` dist-tag).

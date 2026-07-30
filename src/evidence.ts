@@ -247,6 +247,7 @@ ${snapshots
 
 export async function collectEvidence(options: {
   repoRoot: string;
+  transcriptCwd?: string;
   runDir: string;
   request: ContextRequest;
   claudeConfigDir?: string;
@@ -341,7 +342,7 @@ export async function collectEvidence(options: {
     let resolved;
     try {
       resolved = await resolveClaudeTranscript({
-        cwd: options.repoRoot,
+        cwd: options.transcriptCwd ?? options.repoRoot,
         transcriptPath: transcript.path,
         sessionId: transcript.session_id,
         claudeConfigDir: options.claudeConfigDir,

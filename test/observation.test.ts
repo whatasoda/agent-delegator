@@ -75,6 +75,19 @@ describe("run observation", () => {
     expect(events[0]?.metrics.citation_turn_correction_count).toBe(1);
     expect(classifyFailure(new Error("Codex exceeded the 10ms timeout"), "compile")).toBe("codex-timeout");
     expect(classifyFailure(new Error("Repository HEAD changed"), "implement")).toBe("repository-drift");
+
+    await writeFile(join(runDir, "run-events.jsonl"), `${JSON.stringify(events[0])}\n{\"schema_version\":`);
+    expect(await readRunEvents(runDir)).toEqual(events);
+    await appendRunEvent(runDir, {
+      stage: "status", event: "recovered", attempt: null, duration_ms: null, model: null,
+      run_status: "failed", failure_category: "interrupted", message: "recovered after torn append",
+      usage: null, metrics: {}, artifacts: ["state.json"],
+    });
+    expect(await readRunEvents(runDir)).toHaveLength(2);
+    expect(await readFile(join(runDir, "run-events-torn-tails.jsonl"), "utf8"))
+      .toContain("schema_version");
+    await writeFile(join(runDir, "run-events.jsonl"), `{\"broken\"\n${JSON.stringify(events[0])}\n`);
+    await expect(readRunEvents(runDir)).rejects.toThrow("Invalid run event JSON at line 1");
   });
 
   test("reports legacy runs with explicit unknown metadata and telemetry gaps", async () => {
@@ -182,6 +195,49 @@ describe("run observation", () => {
     });
   });
 
+  test("separates accepted salvage from unrecovered failed runs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-delegator-salvage-"));
+    temporaryDirectories.push(root);
+    const runsDir = join(root, "runs");
+    const runDir = join(runsDir, "salvaged");
+    await mkdir(runDir, { recursive: true });
+    const state = legacyState("salvaged", root);
+    state.status = "failed";
+    state.failure = "Codex exceeded the timeout";
+    await writeRunState(runDir, state);
+    await writeFile(join(runDir, "evaluation.json"), JSON.stringify({
+      schema_version: "1",
+      evaluator: "claude",
+      outcome: "accepted-with-changes",
+      brief_quality: "accurate",
+      implementation_quality: "minor-fixes",
+      communication_quality: "acceptable",
+      verification: "passed",
+      ratings: { requirements_fidelity: 5, implementation_quality: 4, communication_efficiency: 4 },
+      issue_categories: [],
+      notes: "Recovered the completed worktree after timeout.",
+      tags: ["salvaged"],
+      recorded_at: new Date().toISOString(),
+      automated: {
+        run_status: "failed",
+        compiler_attempts: 1,
+        implementation_attempts: 1,
+        resume_attempts: 0,
+        iteration_attempts: 0,
+        brief_changed_by_claude: false,
+        brief_json_difference_count: 0,
+        implementation_changed_after_codex: false,
+        final_worktree_fingerprint: "0".repeat(64),
+        final_checkpoint_path: join(runDir, "evaluations", "001", "checkpoint.json"),
+      },
+    }));
+
+    const report = await buildObservationReport(runsDir);
+    expect(report.summary).toMatchObject({ failed_runs: 0, salvaged_runs: 1 });
+    expect(report.runs[0]?.salvaged_after_failure).toBe(true);
+    expect(renderObservationReport(report)).toContain("failed (salvaged)");
+  });
+
   test("rejects incomplete Claude evaluations and corrupt event streams", async () => {
     expect(validateEvaluationInput({ schema_version: "1", evaluator: "claude" }).length).toBeGreaterThan(0);
     const enumErrors = validateEvaluationInput({
@@ -198,8 +254,22 @@ describe("run observation", () => {
       tags: [],
     });
     expect(enumErrors.join("\n")).toContain(
-      "/implementation_quality must be equal to one of the allowed values (allowed: accepted-as-is, minor-fixes, major-fixes, rejected, not-completed)",
+      "/implementation_quality must be equal to one of the allowed values (allowed: accepted-as-is, minor-fixes, major-fixes, rejected, not-completed, not-applicable)",
     );
+    const missingImplementationRating = validateEvaluationInput({
+      schema_version: "1",
+      evaluator: "claude",
+      outcome: "accepted-as-is",
+      brief_quality: "accurate",
+      implementation_quality: "accepted-as-is",
+      communication_quality: "efficient",
+      verification: "passed",
+      ratings: { requirements_fidelity: 5, communication_efficiency: 5 },
+      issue_categories: [],
+      notes: "",
+      tags: [],
+    });
+    expect(missingImplementationRating.join("\n")).toContain("/ratings must have required property 'implementation_quality'");
     const runDir = await mkdtemp(join(tmpdir(), "agent-delegator-observation-"));
     temporaryDirectories.push(runDir);
     await writeFile(join(runDir, "run-events.jsonl"), "{}\n");

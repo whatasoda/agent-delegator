@@ -7,7 +7,7 @@
     "schema_version": { "const": "1" },
     "id": { "type": "string", "minLength": 1 },
     "at": { "type": "string", "format": "date-time" },
-    "stage": { "type": "string", "enum": ["collect", "compile", "approve", "implement", "resume", "evaluate", "status"] },
+    "stage": { "type": "string", "enum": ["collect", "compile", "approve", "implement", "resume", "research", "follow-up", "iterate", "evaluate", "status"] },
     "event": { "type": "string", "enum": ["started", "completed", "failed", "recovered"] },
     "attempt": { "type": ["integer", "null"], "minimum": 1 },
     "duration_ms": { "type": ["integer", "null"], "minimum": 0 },
@@ -47,7 +47,8 @@
         "changed_file_count": { "type": "integer", "minimum": 0 },
         "patch_bytes": { "type": "integer", "minimum": 0 },
         "codex_invoked": { "type": "boolean" },
-        "exit_code": { "type": "integer" }
+        "exit_code": { "type": "integer" },
+        "worktree_changed": { "type": "boolean" }
       }
     },
     "artifacts": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }

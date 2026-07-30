@@ -13,7 +13,7 @@
     "runId": { "type": "string", "minLength": 1 },
     "status": {
       "type": "string",
-      "enum": ["collecting", "prepared", "compiling", "compiled", "approved", "implementing", "completed", "needs-decision", "blocked", "failed"]
+      "enum": ["collecting", "prepared", "compiling", "compiled", "approved", "implementing", "researching", "completed", "needs-decision", "blocked", "failed"]
     },
     "objective": { "type": "string", "minLength": 1 },
     "repoRoot": { "type": "string", "minLength": 1 },
@@ -29,8 +29,8 @@
     "implementationSessionId": { "type": ["string", "null"] },
     "latestResult": { "type": ["string", "null"] },
     "failure": { "type": ["string", "null"] },
-    "failurePhase": { "type": ["string", "null"], "enum": ["collect", "compile", "implement", "resume", null] },
-    "activeOperation": { "type": ["string", "null"], "enum": ["collect", "compile", "implement", "resume", null] },
+    "failurePhase": { "type": ["string", "null"], "enum": ["collect", "compile", "implement", "resume", "research", "follow-up", "iterate", null] },
+    "activeOperation": { "type": ["string", "null"], "enum": ["collect", "compile", "implement", "resume", "research", "follow-up", "iterate", null] },
     "controllerPid": { "type": ["integer", "null"], "minimum": 1 },
     "attempts": {
       "type": "object",
@@ -59,7 +59,12 @@
           "enum": ["feature", "bugfix", "refactor", "test", "documentation", "tooling", "migration", "performance", "security", "investigation", "other"]
         },
         "complexity": { "type": "string", "enum": ["small", "medium", "large", "unknown"] },
-        "tags": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+        "tags": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[^\\u0000-\\u001f\\u007f]+$" },
+          "uniqueItems": true
+        }
       }
     },
     "approvalCount": { "type": "integer", "minimum": 0 },
@@ -68,6 +73,17 @@
     "observationVersion": { "const": 1 },
     "delegatorVersion": { "type": "string", "minLength": 1 },
     "delegatorRevision": { "type": ["string", "null"] },
-    "delegatorDirty": { "type": ["boolean", "null"] }
+    "delegatorDirty": { "type": ["boolean", "null"] },
+    "delegatorArtifactSha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "delegationPattern": { "type": "string", "enum": ["implementation", "research", "interactive", "autonomous"] },
+    "experimentVariant": { "type": ["string", "null"], "minLength": 1, "maxLength": 128, "pattern": "^[^\\u0000-\\u001f\\u007f]+$" },
+    "researchModel": { "type": ["string", "null"] },
+    "researchSessionId": { "type": ["string", "null"] },
+    "researchTurnCount": { "type": "integer", "minimum": 0 },
+    "iterationCount": { "type": "integer", "minimum": 0 },
+    "autonomousStopReason": {
+      "type": ["string", "null"],
+      "enum": ["converged", "needs-decision", "blocked", "turn-limit", "time-limit", "checkpoint-error", null]
+    }
   }
 }

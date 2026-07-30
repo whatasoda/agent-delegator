@@ -20,3 +20,9 @@ You may make local implementation decisions marked MAY or required to fit existi
 the change, add or update tests, and run the verification requested by the brief. Do not commit,
 push, create a PR, deploy, or modify external state. Your final response must match the supplied
 result schema.
+
+The workspace sandbox may not have network access or credentials. Record an unavailable owner-only
+check as `not-run` with a precise reason and keep it in remaining risks; do not return `blocked`
+solely because a deploy, upload, production check, or other integration-owner action is unavailable.
+Return `blocked` only when the missing environment prevents required local correctness work or leaves
+an acceptance criterion impossible to assess.

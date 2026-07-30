@@ -93,7 +93,12 @@
           "enum": ["feature", "bugfix", "refactor", "test", "documentation", "tooling", "migration", "performance", "security", "investigation", "other"]
         },
         "complexity": { "type": "string", "enum": ["small", "medium", "large", "unknown"] },
-        "tags": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+        "tags": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[^\\u0000-\\u001f\\u007f]+$" },
+          "uniqueItems": true
+        }
       }
     },
     "project_profile": { "type": ["string", "null"] },

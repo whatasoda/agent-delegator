@@ -144,6 +144,10 @@ function forbiddenAction(text: string): string | null {
   return null;
 }
 
+export function delegatedActionPolicyWarning(text: string): string | null {
+  return forbiddenAction(text);
+}
+
 function citedContent(source: BriefSource, evidence: BriefEvidenceSource): string | null {
   if (evidence.content === undefined) return null;
   if (evidence.kind === "file") return evidence.content;

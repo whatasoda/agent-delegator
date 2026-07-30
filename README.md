@@ -1,8 +1,10 @@
 # agent-delegator
 
-A standalone Bun CLI for delegating implementation from Claude Code to Codex. Claude remains the
-design, evidence-scope, approval, and integration owner; Codex compiles a reviewable Brief before it
-receives workspace-write implementation authority.
+A standalone Bun CLI for delegating bounded work from Claude Code to Codex. The established path
+compiles a reviewable Brief before Codex receives workspace-write implementation authority. Separate
+read-only research, interactive follow-up, and bounded autonomous-improvement paths let teams trial
+other delegation patterns without weakening the implementation path's Evidence Bundle → Brief →
+approval boundary.
 
 For independent verification from Claude Code, follow
 [`CLAUDE_ACCEPTANCE_HANDOFF.md`](./CLAUDE_ACCEPTANCE_HANDOFF.md).
@@ -42,7 +44,8 @@ unverified rather than implicitly supported. The runtime requires Bun >= 1.3.0; 
 Node-compatible launcher that prints an actionable message when Bun is absent.
 
 Alpha compatibility statement: the CLI currently reads and writes run `state.json` schema version 1,
-`run-events.jsonl` schema version 1, Brief/result schema version 1, and approval schema version 3.
+`run-events.jsonl` schema version 1, Brief/implementation/research/iteration-result schema version 1,
+and approval schema version 3.
 During the alpha series these schemas may change between versions without a migration path; run
 directories are repository-local working state, not durable archives.
 
@@ -57,6 +60,7 @@ Claude design work + project context
   -> approve (Claude quality gate + content hashes)
   -> implement (Codex, workspace-write, separately configurable model slot)
   -> result.json
+  -> optional bounded same-thread improvement loop
   -> resume when a design decision is required
   -> Claude evaluation + cross-run observation report
 ```
@@ -77,7 +81,7 @@ For a small task whose decisions are all in the current Claude conversation, use
 one-command path:
 
 ```sh
-bun run agent-delegator compile \
+agent-delegator compile \
   --objective="Implement the already-designed change" \
   --task-type=feature \
   --complexity=medium \
@@ -94,14 +98,84 @@ For a task with multiple discussion threads, a selected turn range, or additiona
 create a Context Request and separate collection from compilation:
 
 ```sh
-bun run agent-delegator collect \
+agent-delegator collect \
   --context=examples/context-request.json
 
 # Review context-request.json, evidence-bundle.json, evidence.md, and exclusions first.
-bun run agent-delegator compile --run <run-id>
+agent-delegator compile --run <run-id>
 ```
 
 Splitting the steps lets Claude correct source coverage without spending a compiler-model call.
+
+Collection also scans the objective for integration actions that delegated Codex may not perform
+(commit, push, PR/merge, and deploy). A match writes `policy-warnings.json` and compile stops before
+invoking Codex. Rewrite the objective so Claude owns integration, or review the warning and pass
+`--acknowledge-policy-warning`; acknowledgement only accepts the textual false positive and never
+authorizes the forbidden action. The compiler and approval validation remain authoritative.
+
+## Research and interactive trials
+
+Delegate a repository investigation without granting write access:
+
+```sh
+agent-delegator research \
+  --objective="Find the causes and viable fixes; do not implement" \
+  --task-type=investigation \
+  --complexity=medium \
+  --variant=read-only-baseline
+```
+
+`research` uses the same bounded Context Request and Evidence Bundle collection as compilation, but
+runs Codex in a read-only sandbox and writes a structured `research.json`. Findings must identify a
+basis such as a repository-relative path, source ID, command result, or URL. This path does not
+compile or approve an implementation Brief and never grants workspace-write access.
+
+Continue the same Codex thread to trial an interactive pattern:
+
+```sh
+agent-delegator follow-up \
+  --run <run-id> \
+  --message="Compare the two safest options and explain the migration risk."
+```
+
+After the first follow-up, the run's observed delegation pattern changes from `research` to
+`interactive`. Every turn retains its prompt, structured result, event stream, stderr, model/tool
+identity, duration, and token usage when Codex reports it. `--variant` is an arbitrary experiment
+label included in JSON and Markdown reports, so model, prompt, or operating-procedure variants can
+be compared without encoding them as task instructions.
+
+## Bounded autonomous implementation
+
+For a larger refactoring, finish the goal and contract discussion in Claude, then approve the same
+reviewable Brief used by the standard implementation path:
+
+```sh
+agent-delegator compile \
+  --objective="Apply the approved refactoring without changing product behavior" \
+  --task-type=refactor \
+  --complexity=large \
+  --variant=autonomous-baseline
+agent-delegator approve --run <run-id>
+agent-delegator loop --run <run-id> --max-turns=12 --max-minutes=180
+```
+
+From an `approved` run, `loop` performs the initial implementation and then resumes the same Codex
+thread for bounded review-and-improve turns. It can also continue a `completed` run. Every turn
+revalidates the approval, Git base, and preceding worktree checkpoint before granting
+`workspace-write`; it cannot silently change a MUST, scope, acceptance criterion, or product
+decision. The run is observed as `autonomous` and stops on convergence, a decision request, an
+operational block, a checkpoint error, the turn limit, or the time limit. `--max-minutes` bounds the
+improvement phase after any initial implementation, while `--timeout-seconds` still bounds each
+Codex call. A reviewed `--allow-worktree-change` applies only to the first execution that needs it;
+later turns return to the preceding checkpoint guard. The loop also pins Git HEAD at the start of
+its improvement phase, including when `--allow-base-change` was explicitly supplied.
+
+Each iteration writes `attempts/iterate/<turn>/` artifacts and a canonical `iteration.json`.
+The latest invocation summary is `loop.json`, while append-only `loop-history.jsonl` preserves
+convergence, escalation, turn/time-limit, and checkpoint-error stops across repeated invocations.
+Decision requests are also converted to the standard `result.json`, so Claude can answer them with
+the existing `resume` command. Codex still may not commit, push, open or merge a PR, deploy, or
+mutate external systems; Claude owns final diff review, verification, evaluation, and integration.
 
 ## Context Request
 
@@ -141,22 +215,34 @@ added later without changing the Evidence Bundle or approval boundary.
 From the repository root:
 
 ```sh
-bun run agent-delegator resolve-transcript --json
-bun run agent-delegator revalidate --run <run-id>
-bun run agent-delegator approve --run <run-id>
-bun run agent-delegator implement --run <run-id>
-bun run agent-delegator resume \
+agent-delegator resolve-transcript --json
+agent-delegator revalidate --run <run-id>
+agent-delegator approve --run <run-id>
+agent-delegator implement --run <run-id>
+agent-delegator loop \
+  --run <run-id> \
+  --max-turns=12 \
+  --max-minutes=180
+agent-delegator resume \
   --run <run-id> \
   --message="Claude's decision and rationale"
-bun run agent-delegator status --run <run-id>
-bun run agent-delegator status --run <run-id> --observation
-bun run agent-delegator wait --run <run-id>
-bun run agent-delegator evaluate \
+agent-delegator research \
+  --objective="Investigate the current behavior" \
+  --variant=read-only-a
+agent-delegator follow-up \
+  --run <run-id> \
+  --message="Narrow the recommendation using the collected evidence."
+agent-delegator status --run <run-id>
+agent-delegator status --run <run-id> --observation
+agent-delegator wait --run <run-id>
+agent-delegator evaluate \
   --run <run-id> \
   --evaluation=examples/evaluation-input.json
-bun run agent-delegator report --format=markdown
-bun run agent-delegator report --format=json
-bun run agent-delegator report --all --format=markdown
+agent-delegator report --format=markdown
+agent-delegator report --format=json
+agent-delegator report --all --format=markdown
+agent-delegator history --format=markdown
+agent-delegator doctor --json
 ```
 
 Model flags are optional. If omitted, Codex uses its configured default. Environment variables let
@@ -164,10 +250,18 @@ the Claude skill select different default models without hard-coding model names
 
 - `AGENT_DELEGATOR_BRIEF_MODEL`
 - `AGENT_DELEGATOR_IMPLEMENT_MODEL`
+- `AGENT_DELEGATOR_RESEARCH_MODEL`
+- `AGENT_DELEGATOR_CODEX_COMMAND` (an executable path or name for nonstandard installs or wrappers)
 
 These are independent model-selection slots, not automatic cheap/high-quality routing. If neither
 slot is configured, both stages may use the same Codex default model. Cost/quality-based routing is
-a later roadmap item.
+a later roadmap item. Reports label an invoked but unpinned slot as `codex-default` rather than
+mixing it with a stage that was never invoked.
+
+`doctor` is a read-only preflight for the installed agent-delegator/Bun/Codex versions, configured
+Codex executable, repository detection, and machine registry/history paths. The alpha line does not
+hard-code a minimum Codex version yet; schema-constrained output is the compatibility feature probe,
+and malformed event lines are retained and warned as described below.
 
 For free-text values, prefer the single-argument `--option="value"` form, such as
 `--message="Claude's decision"`. The CLI rejects unknown positional arguments, duplicate options,
@@ -186,6 +280,11 @@ Resolution follows this order:
 
 The process-tree and index strategy is adapted from the existing `agent-extensions` session
 resolver. `CLAUDE_CONFIG_DIR` is supported; the default is `~/.claude`.
+
+Use `agent-delegator resolve-transcript --turns` to preview redacted one-line summaries with stable
+visible turn numbers before choosing `--from-turn` / `--to-turn`. Harness metadata and legacy
+sidechain entries do not consume turns. Collection uses the invoking `--cwd`, including a monorepo
+subdirectory, consistently with `resolve-transcript` rather than silently switching to repo root.
 
 Textual user and assistant turn numbering remains stable. Tool calls/results are omitted except for
 structurally matched `AskUserQuestion` prompts and user answers, which are appended as decision
@@ -214,14 +313,23 @@ Important files:
 - `approval.json` — Claude approval and content hashes.
 - `approvals/<attempt>/` — approval history plus its worktree baseline checkpoint.
 - `attempts/<stage>/<attempt>/` — per-attempt prompts, raw structured output, Codex events, stderr,
-  and post-attempt worktree checkpoints for compile, implement, and resume. Every Codex attempt also
-  records `attempt-metadata.json` with the tool package version, Git revision, dirty state, and a
+  and post-attempt worktree checkpoints for compile, implement, resume, and autonomous iteration.
+  Every Codex attempt also records `attempt-metadata.json` with the tool package version, Git
+  revision, dirty state, and a
   checkout worktree fingerprint captured before invocation. It also hashes the running source or
   bundled CLI artifact, so an installed package remains identifiable when no Git checkout exists.
 - `run-events.jsonl` — validated, append-only lifecycle events with timing, failure category,
   artifacts, metrics, model, and token usage when Codex emits it.
 - `result.json` — latest canonical implementer result.
+- `iteration.json` — latest autonomous iteration outcome; each raw turn remains under
+  `attempts/iterate/<turn>/`.
+- `loop.json` / `loop-history.jsonl` — latest and append-only autonomous invocation summaries,
+  including limits and stop reason.
 - `decision-ledger.jsonl` — focused questions and Claude's resume responses.
+- `research.json` — latest canonical read-only research result.
+- `research-dialogue.jsonl` — follow-up messages and the hashes/statuses they continued from.
+- `attempts/research/<turn>/` / `attempts/follow-up/<turn>/` — research prompts, results, Codex
+  events, stderr, tool identity, and before/after target-worktree fingerprints for each turn.
 - `evaluations/<attempt>/evaluation.json` — Claude's manual acceptance assessment joined with
   automatic Brief/worktree comparison; `evaluation.json` is the latest copy.
 
@@ -234,6 +342,15 @@ according to the repository's retention policy; this prototype does not prune th
 Worktree patches, evaluation notes, raw Codex events, and prompts can all be sensitive; publishing a
 report does not make its underlying run directory safe to share.
 
+Recommended local retention baseline: keep active and unevaluated runs indefinitely; keep evaluated
+accepted raw runs for at least 30 days and failed/rejected investigation material for at least 90
+days, unless the target repository requires shorter secret-bearing-data retention. Before manually
+removing one exact run directory, record `evaluate`, inspect `report`, and confirm the run appears in
+`history`. Machine history retains only the minimal state/evaluation snapshot and paths, not Evidence,
+prompts, result bodies, or patches, so archive those separately when later forensic review is needed.
+There is intentionally no automatic prune: deletion policy varies by target and must never erase an
+unevaluated run merely because a disposable worktree is old.
+
 Codex stderr is not streamed to the controller's stderr by default; the complete stream is always
 retained in each attempt's `stderr.log`, and failure messages point at that file. Codex CLI
 diagnostics can be noisy — `Reading additional input from stdin...` despite no stdin content, or a
@@ -244,7 +361,8 @@ delegating agent's context on every call wastes its tokens. Set
 is filtered out of `stderr.log`, because a similar future error may accompany a real failure. Event
 streams may also contain intermediate agent messages. The schema-constrained object in
 `--output-last-message` is the canonical result, and the complete event stream remains diagnostic
-evidence.
+evidence. Malformed JSONL event lines also produce an explicit compatibility warning in the retained
+stderr log while the original lines stay in `events.jsonl`.
 
 ## Observation workflow
 
@@ -254,6 +372,10 @@ durations, retries, model slots, Codex token usage, failure taxonomy, generated-
 approved Brief changes, approval baseline, and each implementation checkpoint. Checkpoint patches
 include tracked and untracked files; fingerprints also cover untracked file contents.
 
+`brief.json` is the only editable Brief source. `brief.md` is a rendered review view; approval now
+refuses when it differs from the canonical rendering instead of silently overwriting hand edits.
+Move intentional changes into `brief.json`, then run `revalidate` before approval.
+
 After Claude has reviewed the diff and verification, copy and edit
 [`examples/evaluation-input.json`](./examples/evaluation-input.json), then run `evaluate`. The manual
 assessment records outcome, Brief/implementation/communication quality, verification status,
@@ -261,19 +383,33 @@ assessment records outcome, Brief/implementation/communication quality, verifica
 
 - Whether Claude changed the generated Brief before approval and a structural JSON difference count.
 - Whether the worktree changed after Codex's latest checkpoint.
-- Compiler, implementation, and resume attempt counts and the final worktree fingerprint.
+- Compiler, implementation, resume, and autonomous iteration counts and the final worktree fingerprint.
+
+For research/interactive runs, start with
+[`examples/research-evaluation-input.json`](./examples/research-evaluation-input.json). It marks Brief
+and implementation quality as not applicable and adds the optional `research_quality` rating.
+Repository state is still checkpointed at evaluation time, making an accidental write by a purported
+read-only trial visible.
 
 `report` scans all run directories and emits a versioned JSON dataset or a Markdown summary. It
-includes acceptance, accepted-as-is, failures, needs-decision/blocked counts, Brief edit rate,
-task/complexity/model/tool-revision/outcome breakdowns, average ratings and stage durations, source volume, token
-totals, and token-telemetry coverage. It also reports controller-cost proxies for the delegating
+includes acceptance, accepted-as-is, unrecovered failures, accepted timeout/interruption salvages,
+needs-decision/blocked counts, Brief edit rate,
+task/complexity/delegation-pattern/experiment-variant/model/tool-revision/outcome breakdowns, average
+ratings and stage durations, source volume, token totals, and token-telemetry coverage. Pattern and
+variant cohort tables join accepted outcomes and average ratings with Codex calls, tokens, controller
+interactions, and review bytes. The report also exposes controller-cost proxies for the delegating
 agent: tracked CLI interactions per run, gate rejections (refusals that cost a diagnose-and-retry
 round trip without any Codex work), failed Codex calls (full paid retries), and the review-surface
-bytes (`brief.md`, `evidence.md`, `result.json`) the delegating agent must read. These are workflow
+bytes (`brief.md`, `evidence.md`, `result.json`, or `research.json`) the delegating agent must read. These are workflow
 observations, not Claude token measurements; they make delegation friction and review volume
 comparable across runs. Old runs without observation events remain reportable with
 unknown metadata and explicit telemetry gaps. Invalid/corrupt runs are listed instead of silently
 discarded.
+
+A research/follow-up turn fingerprints the target worktree immediately before and after Codex.
+Any drift fails that turn as `repository-drift` even though the requested sandbox is read-only, and
+the report exposes `research_worktree_changes`. This catches a sandbox regression or concurrent
+writer instead of silently treating the investigation as an uncontaminated read-only trial.
 
 Every run is also appended to a machine-level registry
 (`~/.agent-delegator/registry.jsonl`, override with `AGENT_DELEGATOR_REGISTRY_PATH`) so that
@@ -281,6 +417,18 @@ Every run is also appended to a machine-level registry
 one invocation. Registered directories that no longer exist (for example, deleted disposable
 worktrees) are listed as unavailable instead of silently shrinking the aggregate. Runs created
 before the registry existed remain reportable per directory with `--runs-dir`.
+
+Each state transition also appends a metadata snapshot to
+`~/.agent-delegator/history.jsonl` (override with `AGENT_DELEGATOR_HISTORY_PATH`; when only
+`AGENT_DELEGATOR_REGISTRY_PATH` is overridden, history is placed beside it). `history` shows the
+latest snapshot for every run directory and can filter by `--pattern` or `--variant`. Run IDs
+recorded there can be used by commands from outside the target Git repository when they are unique.
+The history ledger retains objective, repository/run paths, status, pattern/variant, task metadata,
+models, attempt counts, autonomous stop reason, failure text, and the latest evaluation summary even
+if a disposable worktree disappears. It deliberately
+does not duplicate raw evidence, prompts, results, or patches; those remain only in the private run
+directory, so evaluation requiring those artifacts must happen before that directory is deleted.
+The history file is private (`0600`) but can still contain sensitive objective and failure text.
 
 Token numbers are observations from Codex JSONL, not inferred billing data. A Codex version that
 does not emit usage remains visible as an uncovered call. The report does not calculate currency
@@ -347,6 +495,13 @@ a forwarded interrupt (SIGINT/SIGTERM/SIGHUP, including terminal close) first se
 signal to the Codex process group, then escalates to SIGKILL after a short grace period so an
 unresponsive Codex cannot hang the controller or keep editing the worktree unsupervised.
 
+Choose a timeout that matches the approved task rather than treating 1800 seconds as a completion
+budget; medium and large refactors commonly need an explicit 3600–7200 seconds. A timed-out or
+interrupted workspace-write attempt captures the surviving worktree in that attempt's
+`checkpoint.json` and `worktree.patch` when possible, but does not promote the checkpoint to the
+trusted retry baseline. Review the partial diff first; the unchanged fingerprint deliberately makes
+the next retry require `--allow-worktree-change` when work survived.
+
 The caller's foreground-command timeout is separate from the agent-delegator timeout. When Claude's
 shell tool cannot wait for the configured Codex duration, run the controller with the shell tool's
 supported background mechanism and rely on its completion notification instead of periodic polling —
@@ -361,14 +516,18 @@ Inspect the worktree and surviving child processes before retrying.
 When PID reuse makes a dead controller look alive and the run stays stuck in an active state,
 `status --run <id> --force-fail` performs the same conversion explicitly; verify no Codex process
 from that run is still running before retrying, because a survivor would race the retry in the same
-worktree.
+worktree. If state is already inactive but a PID-reused Git worktree lock remains, the narrower
+`status --run <id> --force-unlock` removes only a readable lock that names that run; use it only after
+the same surviving-process check.
 A failed read-only compiler call can be retried with `compile --run <id> --retry`. When the failure
 is a schema or citation rejection that Claude can fix by hand, `revalidate --run <id>` seeds
 `brief.json` from the raw compiler output if it does not exist yet, re-runs the full validation and
 deterministic citation repairs without a Codex call, and returns the run to `compiled` once the
 edited Brief passes. Validation is never relaxed by this path; it only removes the cost of paying
 for another compiler call to fix what Claude already knows how to correct. A failed
-workspace-write call requires `implement --retry` or `resume --retry`; inspect the repository first,
+workspace-write implementation/resume call requires `implement --retry` or `resume --retry`;
+an iteration failure can retry the same thread with `loop --retry`, or restart from the approved
+Brief in a new thread with `implement --retry`. Inspect the repository first,
 and add `--allow-worktree-change` only when the partial diff is understood. When a resume can no
 longer reach its Codex thread (for example the Codex session store was pruned), `implement --retry`
 starts a fresh implementation attempt from the same approved Brief in a new Codex session instead of
@@ -382,6 +541,12 @@ converts the run to `failed`. The result and status are kept, the completion eve
 record the capture error, and because the last checkpointed fingerprint is then stale, the next
 execution requires `--allow-worktree-change` after reviewing the drift.
 
+Only one mutating operation may update a run at a time. Implementation, resume, and loop also take a
+Git-metadata worktree lock, so separate runs cannot concurrently grant Codex workspace-write access
+to the same checkout. Stale locks whose controller PID is gone are recovered automatically; a live
+lock fails with the owning command, run ID, and PID instead of surfacing an unrelated fingerprint
+race.
+
 `needs-decision` means Claude can answer one focused design/contract question. `blocked` means an
 operational obstacle rather than a missing design choice. A Resume Addendum may answer the previous
 focused question only. If the answer changes a MUST, scope, acceptance criterion, or product
@@ -393,7 +558,7 @@ behavior, edit/recompile/reapprove the Brief or start a new run instead. Respons
 Evidence collection can be tested without invoking Codex:
 
 ```sh
-bun run agent-delegator compile \
+agent-delegator compile \
   --objective="Test current-context extraction" \
   --dry-run
 ```

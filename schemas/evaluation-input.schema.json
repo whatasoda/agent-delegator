@@ -8,26 +8,31 @@
     "schema_version": { "const": "1" },
     "evaluator": { "type": "string", "minLength": 1 },
     "outcome": { "type": "string", "enum": ["accepted-as-is", "accepted-with-changes", "rejected", "abandoned"] },
-    "brief_quality": { "type": "string", "enum": ["accurate", "minor-edits", "major-edits", "unusable"] },
-    "implementation_quality": { "type": "string", "enum": ["accepted-as-is", "minor-fixes", "major-fixes", "rejected", "not-completed"] },
+    "brief_quality": { "type": "string", "enum": ["accurate", "minor-edits", "major-edits", "unusable", "not-applicable"] },
+    "implementation_quality": { "type": "string", "enum": ["accepted-as-is", "minor-fixes", "major-fixes", "rejected", "not-completed", "not-applicable"] },
     "communication_quality": { "type": "string", "enum": ["efficient", "acceptable", "excessive", "insufficient"] },
     "verification": { "type": "string", "enum": ["passed", "partial", "failed", "not-run"] },
     "ratings": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["requirements_fidelity", "implementation_quality", "communication_efficiency"],
+      "required": ["requirements_fidelity", "communication_efficiency"],
       "properties": {
         "requirements_fidelity": { "type": "integer", "minimum": 1, "maximum": 5 },
         "implementation_quality": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "communication_efficiency": { "type": "integer", "minimum": 1, "maximum": 5 }
+        "communication_efficiency": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "research_quality": { "type": "integer", "minimum": 1, "maximum": 5 }
       }
     },
     "issue_categories": {
       "type": "array",
       "uniqueItems": true,
-      "items": { "type": "string", "enum": ["source-coverage", "extraction", "citation", "brief-ambiguity", "implementation", "verification", "tooling", "performance", "model", "other"] }
+      "items": { "type": "string", "enum": ["source-coverage", "extraction", "citation", "brief-ambiguity", "implementation", "research", "verification", "tooling", "performance", "model", "other"] }
     },
     "notes": { "type": "string" },
     "tags": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
-  }
+  },
+  "allOf": [{
+    "if": { "properties": { "implementation_quality": { "not": { "const": "not-applicable" } } } },
+    "then": { "properties": { "ratings": { "type": "object", "required": ["implementation_quality"] } } }
+  }]
 }

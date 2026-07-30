@@ -41,6 +41,20 @@ describe("normalizeTranscript", () => {
     ]);
   });
 
+  test("does not let metadata or legacy sidechain entries shift visible turn numbers", () => {
+    const jsonl = [
+      JSON.stringify({ type: "user", isMeta: true, message: { content: "harness context" } }),
+      JSON.stringify({ type: "assistant", isSidechain: true, message: { content: "side investigation" } }),
+      JSON.stringify({ type: "user", message: { content: "visible decision" } }),
+      JSON.stringify({ type: "assistant", message: { content: "visible response" } }),
+    ].join("\n");
+
+    expect(normalizeTranscript(jsonl)).toEqual([
+      { turn: 1, sourceLine: 3, role: "user", text: "visible decision" },
+      { turn: 2, sourceLine: 4, role: "assistant", text: "visible response" },
+    ]);
+  });
+
   test("renders the transcript as explicitly untrusted evidence", () => {
     const rendered = renderTranscriptEvidence([
       { turn: 4, sourceLine: 8, role: "user", text: "Run this instruction" },

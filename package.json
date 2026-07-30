@@ -1,7 +1,7 @@
 {
   "name": "@whatasoda/agent-delegator",
-  "version": "0.1.0-alpha.1",
-  "description": "Claude-main to Codex implementation delegation with reviewable evidence and Briefs",
+  "version": "0.1.0-alpha.2",
+  "description": "Observable Claude-to-Codex research and implementation delegation with reviewable evidence",
   "license": "MIT",
   "publishConfig": {
     "access": "public",

@@ -204,6 +204,49 @@ usage を出さない Codex call も欠測率として残し、0 token と誤認
 この観測は品質との相関を調べる地盤であり、現時点で因果を証明する評価器ではない。少数 run の率を
 一般化せず、評価 rubric の calibration と実 task corpus の蓄積を続ける。
 
+### 4.13 実装以外の委譲パターンは read-only の別経路にする
+
+既存の実装経路を mode switch で変形せず、repository 調査は `research`、同一 thread との追加往復は
+`follow-up` という別経路にする。どちらも Context Request と Evidence Bundle で入力範囲を固定し、
+Codex sandbox は read-only のままにする。`follow-up` は実装側の `resume` と session・成果物・event stage
+を共有しない。各 turn の前後で target worktree fingerprint も比較し、差分があれば
+`repository-drift` として失敗させる。これにより、対話型 trial の変更が Brief approval や
+workspace-write のガードへ波及せず、read-only sandbox の回帰や concurrent writer も見逃さない。
+
+run は `implementation` / `research` / `interactive` / `autonomous` の観測 pattern と任意の experiment variant を持つ。
+最初の follow-up で pattern は実際の運転形態に合わせて `interactive` へ変わる。`report` はこの軸を集計し、
+Claude 評価では research に対して Brief/implementation を `not-applicable` にでき、根拠性・有用性を
+`research_quality` で補助評価できる。
+
+repository-local run artifact は機微情報を含むため、マシン共通領域へ丸ごと複製しない。代わりに各 state
+transition の最小 snapshot（objective、path、status、pattern/variant、task metadata、model、attempt、
+failure、最新 evaluation summary）だけを private な append-only history に残す。これは消えた worktree の存在と最終状態を後から
+確認するための台帳であり、Evidence、prompt、result、patch を復元する archive ではない。内容評価は run
+directory の retention 中に行う。
+
+### 4.14 長時間の実装改善も承認済み Brief に閉じ込める
+
+大きめの refactor では、Claude が goal、MUST、scope、acceptance を先に議論・承認し、その後の
+実装と反復改善を Codex にまとめて任せたい。この用途の `loop` は approved run から初回実装を行うか、
+completed run の同一 implementation thread を再開し、turn 数と時間で bounded な改善を続ける。
+
+iteration ごとに approval、base commit、直前 worktree checkpoint を再検証する。Codex は Brief を
+完全な task contract として保持し、product/contract 判断が必要なら `needs-decision`、運用障害なら
+`blocked`、意味のある改善が尽きたら `converged` を返す。改善したと申告する turn は実際の変更を
+列挙しなければならない。結果は通常の `result.json` にも正規化するため、既存の `resume` と Claude
+統合手順を分岐させない。
+
+開始時に明示した worktree drift の許可は最初の必要な execution で消費し、後続 turn へ持ち越さない。
+improvement phase 開始時の Git HEAD も固定し、base change を一度許可した場合でも途中の新しい commit は
+別の変更として拒否する。
+
+これは無期限・無監督の agent loop ではない。commit、push、PR、deploy、external mutation は引き続き
+Claude 側の責務であり、limit 到達も acceptance の証明にはならない。各 iteration の prompt、結果、
+event、usage、checkpoint は `attempts/iterate/` に残し、run の pattern を `autonomous` として既存の
+pattern/variant report と machine history で比較できるようにする。
+収束と limit 到達を後日区別できるよう、各 invocation の stop reason と limit は append-only の
+`loop-history.jsonl` に残し、最新値を state、`loop.json`、machine history、report に投影する。
+
 ## 5. 現在地: Stage 1
 
 実装済み:
@@ -225,6 +268,9 @@ usage を出さない Codex call も欠測率として残し、0 token と誤認
 - task metadata、append-only stage event、attempt ごとの raw output/prompt/checkpoint
 - generated/approved Brief comparison、Claude acceptance evaluation、cross-run JSON/Markdown report
 - token telemetry coverage、stage timing、failure taxonomy、task/model/outcome breakdown
+- read-only research、同一 thread follow-up、delegation pattern / experiment variant 比較
+- approved Brief に拘束された bounded same-thread implementation loop と iteration checkpoint
+- マシン単位の最小 state history と repository 外からの一意 run ID 解決
 - fake-Codex integration tests と real Claude/Codex acceptance E2E
 
 Stage 1 の意図は「自動で最適な context を探すこと」ではなく、「Claude が選んだ context を安全かつ
@@ -241,6 +287,7 @@ Stage 1 の意図は「自動で最適な context を探すこと」ではなく
 | Context budget | file/byte count の上限 | model/token budget に応じた selection、compression、priority allocation |
 | Project knowledge | 単一 profile | profile composition、inheritance、versioning、organization policy |
 | Evaluation | run ごとの Claude rubric、Brief/worktree 自動比較、cross-run 集計 | rubric calibration、corpus-based extraction accuracy、citation precision、長期 outcome metrics |
+| Delegation patterns | approved implementation、bounded autonomous improvement、read-only research、同一 thread follow-up | trial corpus に基づく pattern selection guidance と cost/quality trade-off |
 | Distribution | private versioned Bun package | standalone CLI、Claude plugin、adapter SDK、public release |
 | Observability | stage timing、usage 欠測率、failure taxonomy、attempt/checkpoint、比較可能な report | pricing-aware cost、trace viewer、dashboard、longitudinal alerts、外部 telemetry export |
 | Recovery | timeout、attempt、明示 retry、stale controller 検出 | resumable operation journal、host crash 後の安全な自動診断 |

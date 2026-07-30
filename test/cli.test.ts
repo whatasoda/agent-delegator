@@ -39,6 +39,7 @@ async function fixture(): Promise<{
   repo: string;
   runs: string;
   transcript: string;
+  codex: string;
   env: Record<string, string>;
   log: string;
 }> {
@@ -69,11 +70,17 @@ async function fixture(): Promise<{
     `#!/usr/bin/env bun
 import { appendFileSync, writeFileSync } from "node:fs";
 const args = process.argv.slice(2);
+if (args.includes("--version")) {
+  process.stdout.write("codex-cli fixture\\n");
+  process.exit(0);
+}
 appendFileSync(process.env.FAKE_CODEX_LOG, JSON.stringify(args) + "\\n");
 const outputIndex = args.indexOf("--output-last-message");
 const output = args[outputIndex + 1];
 const isResume = args.includes("resume");
 const isBrief = args.some((arg) => arg.endsWith("brief.schema.json"));
+const isResearch = args.some((arg) => arg.endsWith("research-result.schema.json"));
+const isIteration = args.some((arg) => arg.endsWith("iteration-result.schema.json"));
 const citationTurn = Number(process.env.FAKE_CODEX_CITATION_TURN ?? "2");
 const citationSourceId = process.env.FAKE_CODEX_CITATION_SOURCE_ID ?? "source-001";
 const constraintQuote = process.env.FAKE_CODEX_CONSTRAINT_QUOTE ?? "must wait for the exact greeting wording";
@@ -108,24 +115,70 @@ const brief = process.env.FAKE_CODEX_INVALID_BRIEF === "1" ? {} : {
   }]
 };
 const result = process.env.FAKE_CODEX_INVALID_RESULT === "1" ? { status: "completed" } : {
-  status: isResume ? "completed" : "needs-decision",
-  summary: isResume ? "Applied the supplied decision" : "Waiting for wording",
+  status: isResume || process.env.FAKE_CODEX_IMPLEMENT_COMPLETED === "1" ? "completed" : "needs-decision",
+  summary: isResume || process.env.FAKE_CODEX_IMPLEMENT_COMPLETED === "1" ? "Applied the supplied decision" : "Waiting for wording",
   changed_files: [],
   implementation_decisions: [],
   brief_deviations: [],
   verification: [],
   remaining_risks: [],
-  question: isResume ? "" : "What exact greeting should be used?"
+  question: isResume || process.env.FAKE_CODEX_IMPLEMENT_COMPLETED === "1" ? "" : "What exact greeting should be used?"
 };
+const research = process.env.FAKE_CODEX_INVALID_RESEARCH === "1" ? { status: "answered" } : {
+  status: "answered",
+  summary: isResume ? "Refined the investigation" : "Investigated the fixture",
+  findings: [{ finding: "The fixture has durable guidance", basis: ["CLAUDE.md"] }],
+  recommendations: ["Keep the research path read-only"],
+  uncertainties: [],
+  follow_up_question: ""
+};
+const iterationOutcome = process.env.FAKE_CODEX_ITERATION_OUTCOME ?? "converged";
+const iteration = {
+  outcome: iterationOutcome,
+  summary: iterationOutcome === "improved" ? "Improved the implementation" : "The implementation converged",
+  changed_files: iterationOutcome === "improved" ? ["autonomous.txt"] : [],
+  implementation_decisions: [],
+  brief_deviations: [],
+  verification: [{ command: "inspect fixture", status: "passed", details: "fixture checked" }],
+  remaining_risks: [],
+  question: ""
+};
+if (isIteration && iterationOutcome === "improved" && process.env.FAKE_CODEX_ITERATION_SKIP_WRITE !== "1") {
+  appendFileSync("autonomous.txt", "iteration\\n");
+}
+if (!isBrief && !isResearch && process.env.FAKE_CODEX_COMMIT === "1") {
+  writeFileSync("delegated-commit.txt", "unexpected\\n");
+  Bun.spawnSync(["git", "add", "delegated-commit.txt"]);
+  Bun.spawnSync([
+    "git", "-c", "user.name=Delegated Agent", "-c", "user.email=delegated@example.invalid",
+    "commit", "-qm", "unexpected delegated commit",
+  ]);
+}
+if (!isBrief && !isResearch && !isIteration && process.env.FAKE_CODEX_PARTIAL_WRITE === "1") {
+  writeFileSync("partial-work.txt", "partial implementation\\n");
+}
+if (process.env.FAKE_CODEX_EARLY_EVENTS === "1") {
+  if (!(process.env.FAKE_CODEX_NO_IMPLEMENT_THREAD === "1" && !isBrief && !isResume)) {
+    process.stdout.write(JSON.stringify({ type: "thread.started", thread_id: isResume ? "thread-resumed" : isBrief ? "thread-compiler" : "thread-implementer" }) + "\\n");
+  }
+  process.stdout.write(JSON.stringify({
+    type: "turn.completed",
+    usage: { input_tokens: isBrief ? 100 : 200, cached_input_tokens: isBrief ? 25 : 50, output_tokens: isBrief ? 40 : 60 }
+  }) + "\\n");
+}
+if (process.env.FAKE_CODEX_DELAY_MS) await Bun.sleep(Number(process.env.FAKE_CODEX_DELAY_MS));
 process.stderr.write("fake codex stderr noise\\n");
-writeFileSync(output, JSON.stringify(isBrief ? brief : result));
-if (!(process.env.FAKE_CODEX_NO_IMPLEMENT_THREAD === "1" && !isBrief && !isResume)) {
+writeFileSync(output, JSON.stringify(isBrief ? brief : isResearch ? research : isIteration ? iteration : result));
+if (isResearch && process.env.FAKE_CODEX_WRITE === "1") writeFileSync("research-side-effect.txt", "unexpected\\n");
+if (process.env.FAKE_CODEX_EARLY_EVENTS !== "1" && !(process.env.FAKE_CODEX_NO_IMPLEMENT_THREAD === "1" && !isBrief && !isResume)) {
   process.stdout.write(JSON.stringify({ type: "thread.started", thread_id: isResume ? "thread-resumed" : isBrief ? "thread-compiler" : "thread-implementer" }) + "\\n");
 }
-process.stdout.write(JSON.stringify({
-  type: "turn.completed",
-  usage: { input_tokens: isBrief ? 100 : 200, cached_input_tokens: isBrief ? 25 : 50, output_tokens: isBrief ? 40 : 60 }
-}) + "\\n");
+if (process.env.FAKE_CODEX_EARLY_EVENTS !== "1") {
+  process.stdout.write(JSON.stringify({
+    type: "turn.completed",
+    usage: { input_tokens: isBrief ? 100 : 200, cached_input_tokens: isBrief ? 25 : 50, output_tokens: isBrief ? 40 : 60 }
+  }) + "\\n");
+}
 `,
   );
   await chmod(fakeCodex, 0o755);
@@ -136,6 +189,7 @@ process.stdout.write(JSON.stringify({
     repo,
     runs,
     transcript,
+    codex: fakeCodex,
     log,
     env: {
       PATH: `${bin}:${process.env.PATH ?? ""}`,
@@ -260,6 +314,37 @@ describe("agent-delegator CLI", () => {
     expect(events).toContain('"attempts/compile/001/citation-turn-corrections.json"');
   });
 
+  test("stops before compiler spend when the objective appears to delegate integration", async () => {
+    const { repo, runs, transcript, env, log } = await fixture();
+    const warned = await run(
+      [
+        "compile", "--objective=Run git push after implementation", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "policy-preflight",
+      ],
+      repo,
+      env,
+    );
+    expect(warned.exitCode).toBe(1);
+    expect(warned.stderr).toContain("no Codex compiler was invoked");
+    expect(warned.stderr).toContain("does not authorize Codex");
+    expect(await stat(log).then(() => true, () => false)).toBe(false);
+    expect(JSON.parse(await readFile(join(runs, "policy-preflight", "state.json"), "utf8")))
+      .toMatchObject({ status: "prepared", attempts: { compile: 0 } });
+    expect(JSON.parse(await readFile(join(runs, "policy-preflight", "policy-warnings.json"), "utf8")))
+      .toMatchObject({ warnings: [{ source: "objective", action: "push" }] });
+
+    const acknowledged = await run(
+      [
+        "compile", "--run", "policy-preflight", "--runs-dir", runs,
+        "--acknowledge-policy-warning",
+      ],
+      repo,
+      env,
+    );
+    expect(acknowledged.exitCode).toBe(0);
+    expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(1);
+  });
+
   test("runs compile, approval, decision, and resume lifecycle", async () => {
     const { repo, runs, transcript, env, log } = await fixture();
     const compile = await run(
@@ -313,7 +398,7 @@ describe("agent-delegator CLI", () => {
     const state = JSON.parse(await readFile(join(runs, "lifecycle", "state.json"), "utf8"));
     expect(state.status).toBe("completed");
     expect(state.compilerSessionId).toBe("thread-compiler");
-    expect(state.implementationSessionId).toBe("thread-implementer");
+    expect(state.implementationSessionId).toBe("thread-resumed");
     expect(state.attempts).toEqual({ collect: 1, compile: 1, implement: 1, resume: 1 });
     expect((await stat(join(runs, "lifecycle", "state.json"))).mode & 0o777).toBe(0o600);
     expect(await readFile(join(runs, "lifecycle", "transcript.md"), "utf8")).toContain(
@@ -370,9 +455,16 @@ describe("agent-delegator CLI", () => {
     );
     expect(evaluation.exitCode).toBe(0);
     const observed = JSON.parse(evaluation.stdout).observation;
+    expect(observed.delegation_pattern).toBe("implementation");
+    expect(observed.experiment_variant).toBeNull();
     expect(observed.metadata).toEqual({ task_type: "tooling", complexity: "small", tags: ["observability", "fixture"] });
     expect(observed.usage).toEqual({ input_tokens: 500, cached_input_tokens: 125, output_tokens: 160 });
     expect(observed.usage_observed_calls).toBe(3);
+    expect(observed.models).toEqual({
+      compiler: "codex-default",
+      implementation: "codex-default",
+      research: null,
+    });
     expect(observed.brief_changed_by_claude).toBe(false);
     expect(observed.evaluation.automated.implementation_changed_after_codex).toBe(false);
 
@@ -389,10 +481,19 @@ describe("agent-delegator CLI", () => {
       token_observation_percent: 100,
     });
     expect(reportValue.breakdowns.task_type).toEqual({ tooling: 1 });
+    expect(reportValue.breakdowns.compiler_model).toEqual({ "codex-default": 1 });
+    expect(reportValue.breakdowns.implementation_model).toEqual({ "codex-default": 1 });
+    expect(reportValue.comparisons.delegation_pattern.implementation).toMatchObject({
+      runs: 1,
+      evaluated: 1,
+      accepted: 1,
+      codex_calls: 3,
+    });
     expect(reportValue.averages.ratings).toEqual({
       requirements_fidelity: 5,
       implementation_quality: 5,
       communication_efficiency: 5,
+      research_quality: null,
     });
 
     const aggregate = await run(["report", "--all", "--format", "json"], repo, env);
@@ -406,6 +507,317 @@ describe("agent-delegator CLI", () => {
     expect(await readFile(join(runDir, "run-events.jsonl"), "utf8")).toContain(
       '"attempts/compile/001/attempt-metadata.json"',
     );
+  });
+
+  test("runs read-only research, continues it interactively, and records machine history", async () => {
+    const { repo, runs, transcript, env, log } = await fixture();
+    const started = await run(
+      [
+        "research", "--objective", "Investigate the fixture", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "research-flow", "--variant", "one-shot-a",
+        "--model", "research-fixture",
+      ],
+      repo,
+      env,
+    );
+    expect(started.exitCode).toBe(0);
+    expect(JSON.parse(started.stdout)).toMatchObject({ status: "completed", research_status: "answered", turn: 1 });
+
+    const continued = await run(
+      ["follow-up", "--run", "research-flow", "--message=Check the durable guidance again."],
+      resolve(repo, ".."),
+      env,
+    );
+    expect(continued.exitCode).toBe(0);
+    expect(JSON.parse(continued.stdout)).toMatchObject({ status: "completed", turn: 2 });
+
+    const state = JSON.parse(await readFile(join(runs, "research-flow", "state.json"), "utf8"));
+    expect(state).toMatchObject({
+      delegationPattern: "interactive",
+      experimentVariant: "one-shot-a",
+      researchSessionId: "thread-resumed",
+      researchTurnCount: 2,
+      compilerModel: null,
+      researchModel: "research-fixture",
+    });
+    const calls = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toContain("read-only");
+    expect(calls[1]).toContain('sandbox_mode="read-only"');
+    expect(calls[1]).toContain("resume");
+    expect(await readFile(join(runs, "research-flow", "research-dialogue.jsonl"), "utf8")).toContain(
+      "Check the durable guidance again.",
+    );
+    expect(JSON.parse(
+      await readFile(join(runs, "research-flow", "attempts", "research", "001", "worktree-observation.json"), "utf8"),
+    ).changed).toBe(false);
+
+    const evaluationInput = join(runs, "research-evaluation.json");
+    await writeFile(evaluationInput, JSON.stringify({
+      schema_version: "1",
+      evaluator: "claude-test",
+      outcome: "accepted-as-is",
+      brief_quality: "not-applicable",
+      implementation_quality: "not-applicable",
+      communication_quality: "efficient",
+      verification: "passed",
+      ratings: {
+        requirements_fidelity: 5,
+        communication_efficiency: 5,
+        research_quality: 5,
+      },
+      issue_categories: [],
+      notes: "Research fixture accepted.",
+      tags: ["research"],
+    }));
+    const evaluated = await run(
+      ["evaluate", "--run", "research-flow", "--evaluation", evaluationInput],
+      resolve(repo, ".."),
+      env,
+    );
+    expect(evaluated.exitCode).toBe(0);
+    expect(JSON.parse(evaluated.stdout).observation.evaluation.ratings.research_quality).toBe(5);
+
+    const history = await run(["history", "--format", "json", "--pattern", "interactive"], resolve(repo, ".."), env);
+    expect(history.exitCode).toBe(0);
+    const historyValue = JSON.parse(history.stdout);
+    expect(historyValue.runs).toHaveLength(1);
+    expect(historyValue.runs[0]).toMatchObject({
+      run_id: "research-flow",
+      delegation_pattern: "interactive",
+      experiment_variant: "one-shot-a",
+      status: "completed",
+      evaluation: { outcome: "accepted-as-is", ratings: { research_quality: 5 } },
+    });
+
+    const report = await run(["report", "--runs-dir", runs, "--format", "json"], repo, env);
+    const reportValue = JSON.parse(report.stdout);
+    expect(reportValue.breakdowns.delegation_pattern).toEqual({ interactive: 1 });
+    expect(reportValue.breakdowns.experiment_variant).toEqual({ "one-shot-a": 1 });
+    expect(reportValue.summary.codex_calls).toBe(2);
+    expect(reportValue.summary.research_worktree_changes).toBe(0);
+    expect(reportValue.comparisons.delegation_pattern.interactive).toMatchObject({
+      runs: 1,
+      evaluated: 1,
+      accepted: 1,
+      codex_calls: 2,
+      average_ratings: { implementation_quality: null, research_quality: 5 },
+    });
+    expect(reportValue.comparisons.experiment_variant["one-shot-a"].tracked_invocations).toBe(4);
+  });
+
+  test("retries a failed research follow-up without duplicating dialogue", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    await run(
+      [
+        "research", "--objective=Retry research dialogue", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "research-retry",
+      ],
+      repo,
+      env,
+    );
+    const failed = await run(
+      ["follow-up", "--run", "research-retry", "--runs-dir", runs, "--message=Inspect once more."],
+      repo,
+      { ...env, FAKE_CODEX_INVALID_RESEARCH: "1" },
+    );
+    expect(failed.exitCode).toBe(1);
+    expect(failed.stderr).toContain("Research result failed validation");
+
+    const retried = await run(
+      [
+        "follow-up", "--retry", "--run", "research-retry", "--runs-dir", runs,
+        "--message=Inspect once more.",
+      ],
+      repo,
+      env,
+    );
+    expect(retried.exitCode).toBe(0);
+    const dialogue = (await readFile(join(runs, "research-retry", "research-dialogue.jsonl"), "utf8"))
+      .trim().split("\n");
+    expect(dialogue).toHaveLength(1);
+  });
+
+  test("runs approved implementation and bounded autonomous improvement turns", async () => {
+    const { repo, runs, transcript, env, log } = await fixture();
+    await run(
+      [
+        "compile", "--objective", "Autonomously improve the fixture", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "autonomous-flow", "--variant", "three-hour-loop",
+      ],
+      repo,
+      env,
+    );
+    const notReady = await run(
+      ["loop", "--run", "autonomous-flow", "--runs-dir", runs],
+      repo,
+      env,
+    );
+    expect(notReady.exitCode).toBe(1);
+    expect(notReady.stderr).toContain("Run must be approved, completed, or retryable before loop");
+    await run(["approve", "--run", "autonomous-flow", "--runs-dir", runs, "--allow-unresolved"], repo, env);
+    const invalidLimit = await run(
+      ["loop", "--run", "autonomous-flow", "--runs-dir", runs, "--max-turns", "101"],
+      repo,
+      env,
+    );
+    expect(invalidLimit.exitCode).toBe(1);
+    expect(invalidLimit.stderr).toContain("--max-turns must not exceed 100");
+    expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(1);
+    const invalidRetry = await run(
+      ["loop", "--run", "autonomous-flow", "--runs-dir", runs, "--retry"],
+      repo,
+      env,
+    );
+    expect(invalidRetry.exitCode).toBe(1);
+    expect(invalidRetry.stderr).toContain("loop --retry is only valid after a failed");
+
+    const limited = await run(
+      ["loop", "--run", "autonomous-flow", "--runs-dir", runs, "--max-turns", "2", "--max-minutes", "180"],
+      repo,
+      { ...env, FAKE_CODEX_IMPLEMENT_COMPLETED: "1", FAKE_CODEX_ITERATION_OUTCOME: "improved" },
+    );
+    expect(limited.exitCode).toBe(0);
+    expect(JSON.parse(limited.stdout)).toMatchObject({
+      status: "completed",
+      stop_reason: "turn-limit",
+      last_outcome: "improved",
+      turns_completed: 2,
+      total_iterations: 2,
+    });
+
+    const converged = await run(
+      ["loop", "--run", "autonomous-flow", "--runs-dir", runs, "--max-turns", "3"],
+      repo,
+      { ...env, FAKE_CODEX_ITERATION_OUTCOME: "converged" },
+    );
+    expect(converged.exitCode).toBe(0);
+    expect(JSON.parse(converged.stdout)).toMatchObject({
+      status: "completed",
+      stop_reason: "converged",
+      last_outcome: "converged",
+      turns_completed: 1,
+      total_iterations: 3,
+    });
+
+    const state = JSON.parse(await readFile(join(runs, "autonomous-flow", "state.json"), "utf8"));
+    expect(state).toMatchObject({
+      delegationPattern: "autonomous",
+      iterationCount: 3,
+      autonomousStopReason: "converged",
+      status: "completed",
+    });
+    expect(await readFile(join(repo, "autonomous.txt"), "utf8")).toBe("iteration\niteration\n");
+    const events = await readFile(join(runs, "autonomous-flow", "run-events.jsonl"), "utf8");
+    expect(events.match(/\"stage\":\"iterate\",\"event\":\"completed\"/g)).toHaveLength(3);
+    const loopHistory = (await readFile(join(runs, "autonomous-flow", "loop-history.jsonl"), "utf8"))
+      .trim().split("\n").map((line) => JSON.parse(line));
+    expect(loopHistory.map((entry) => entry.stop_reason)).toEqual(["turn-limit", "converged"]);
+    const calls = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]);
+    expect(calls).toHaveLength(5);
+    expect(calls.slice(2).every((call) => call.includes('sandbox_mode="workspace-write"'))).toBe(true);
+
+    const evaluationInput = join(runs, "autonomous-evaluation.json");
+    await writeFile(evaluationInput, JSON.stringify({
+      schema_version: "1",
+      evaluator: "claude-test",
+      outcome: "accepted-as-is",
+      brief_quality: "accurate",
+      implementation_quality: "accepted-as-is",
+      communication_quality: "efficient",
+      verification: "passed",
+      ratings: {
+        requirements_fidelity: 5,
+        implementation_quality: 5,
+        communication_efficiency: 5,
+      },
+      issue_categories: [],
+      notes: "Autonomous fixture accepted.",
+      tags: ["autonomous"],
+    }));
+    const evaluated = await run(
+      ["evaluate", "--run", "autonomous-flow", "--runs-dir", runs, "--evaluation", evaluationInput],
+      repo,
+      env,
+    );
+    expect(evaluated.exitCode).toBe(0);
+    expect(JSON.parse(evaluated.stdout).observation.evaluation.automated.iteration_attempts).toBe(3);
+
+    const report = await run(["report", "--runs-dir", runs, "--format", "json"], repo, env);
+    const observed = JSON.parse(report.stdout);
+    expect(observed.breakdowns.delegation_pattern).toEqual({ autonomous: 1 });
+    expect(observed.breakdowns.autonomous_stop_reason).toEqual({ converged: 1 });
+    expect(observed.comparisons.delegation_pattern.autonomous).toMatchObject({
+      runs: 1,
+      evaluated: 1,
+      accepted: 1,
+      codex_calls: 5,
+      average_ratings: { implementation_quality: 5, research_quality: null },
+    });
+    expect(observed.runs[0].attempts.iterate).toBe(3);
+    const history = await run(["history", "--format", "json", "--pattern", "autonomous"], repo, env);
+    expect(JSON.parse(history.stdout).runs[0]).toMatchObject({
+      run_id: "autonomous-flow",
+      autonomous_stop_reason: "converged",
+      attempts: { iteration_turns: 3 },
+      evaluation: { outcome: "accepted-as-is" },
+    });
+
+    const falseImprovement = await run(
+      ["loop", "--run", "autonomous-flow", "--runs-dir", runs, "--max-turns", "1"],
+      repo,
+      { ...env, FAKE_CODEX_ITERATION_OUTCOME: "improved", FAKE_CODEX_ITERATION_SKIP_WRITE: "1" },
+    );
+    expect(falseImprovement.exitCode).toBe(1);
+    expect(falseImprovement.stderr).toContain("outcome improved but the worktree did not change");
+
+    const restarted = await run(
+      ["implement", "--run", "autonomous-flow", "--runs-dir", runs, "--retry"],
+      repo,
+      { ...env, FAKE_CODEX_IMPLEMENT_COMPLETED: "1" },
+    );
+    expect(restarted.exitCode).toBe(0);
+    expect(JSON.parse(restarted.stdout)).toMatchObject({ status: "completed", attempt: 2 });
+  });
+
+  test("fails closed when a purported read-only researcher changes the worktree", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    const researched = await run(
+      [
+        "research", "--objective", "Detect research drift", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "research-drift",
+      ],
+      repo,
+      { ...env, FAKE_CODEX_WRITE: "1" },
+    );
+    expect(researched.exitCode).toBe(1);
+    expect(researched.stderr).toContain("worktree changed during read-only research");
+    const events = await readFile(join(runs, "research-drift", "run-events.jsonl"), "utf8");
+    expect(events).toContain('"failure_category":"repository-drift"');
+    expect(events).toContain('"worktree_changed":true');
+  });
+
+  test("retries a failed read-only research call without recollecting evidence", async () => {
+    const { repo, runs, transcript, env, log } = await fixture();
+    const failed = await run(
+      [
+        "research", "--objective", "Retry research", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "research-retry",
+      ],
+      repo,
+      { ...env, FAKE_CODEX_INVALID_RESEARCH: "1" },
+    );
+    expect(failed.exitCode).toBe(1);
+    expect(failed.stderr).toContain("Research result failed validation");
+
+    const retried = await run(
+      ["research", "--run", "research-retry", "--runs-dir", runs, "--retry"],
+      repo,
+      env,
+    );
+    expect(retried.exitCode).toBe(0);
+    expect(JSON.parse(retried.stdout)).toMatchObject({ status: "completed", turn: 2 });
+    expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(2);
   });
 
   test("rejects changed approval inputs before invoking the implementer", async () => {
@@ -450,6 +862,116 @@ describe("agent-delegator CLI", () => {
     expect(allowed.exitCode).toBe(0);
     expect(JSON.parse(allowed.stdout).status).toBe("needs-decision");
     expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(2);
+  });
+
+  test("detects a commit made during delegated workspace-write execution", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    await run(
+      [
+        "compile", "--objective", "Detect delegated commits", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "delegated-commit",
+      ],
+      repo,
+      env,
+    );
+    await run(["approve", "--run", "delegated-commit", "--runs-dir", runs, "--allow-unresolved"], repo, env);
+
+    const implementation = await run(
+      ["implement", "--run", "delegated-commit", "--runs-dir", runs],
+      repo,
+      { ...env, FAKE_CODEX_IMPLEMENT_COMPLETED: "1", FAKE_CODEX_COMMIT: "1" },
+    );
+    expect(implementation.exitCode).toBe(1);
+    expect(implementation.stderr).toContain("Repository HEAD changed during workspace-write execution");
+    const state = JSON.parse(await readFile(join(runs, "delegated-commit", "state.json"), "utf8"));
+    expect(state).toMatchObject({ status: "failed", failurePhase: "implement" });
+    const events = await readFile(join(runs, "delegated-commit", "run-events.jsonl"), "utf8");
+    expect(events).toContain('"failure_category":"repository-drift"');
+  });
+
+  test("rejects concurrent mutation of the same run and removes the lock afterward", async () => {
+    const { repo, runs, transcript, env, log } = await fixture();
+    await run(
+      [
+        "compile", "--objective", "Serialize implementations", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "locked-run",
+      ],
+      repo,
+      env,
+    );
+    await run(["approve", "--run", "locked-run", "--runs-dir", runs, "--allow-unresolved"], repo, env);
+    const lockPath = join(runs, "locked-run", ".operation.lock");
+    const firstPromise = run(
+      ["implement", "--run", "locked-run", "--runs-dir", runs],
+      repo,
+      { ...env, FAKE_CODEX_DELAY_MS: "500" },
+    );
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      if (await stat(lockPath).then(() => true, () => false)) break;
+      await Bun.sleep(10);
+    }
+    const second = await run(["implement", "--run", "locked-run", "--runs-dir", runs], repo, env);
+    expect(second.exitCode).toBe(1);
+    expect(second.stderr).toContain("Run is busy with implement");
+    const first = await firstPromise;
+    expect(first.exitCode).toBe(0);
+    expect(await stat(lockPath).then(() => true, () => false)).toBe(false);
+    expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(2);
+  });
+
+  test("recovers an operation lock whose controller is gone", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    await run(
+      [
+        "compile", "--objective", "Recover a stale lock", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "stale-lock",
+      ],
+      repo,
+      env,
+    );
+    await writeFile(join(runs, "stale-lock", ".operation.lock"), JSON.stringify({
+      schema_version: "1",
+      token: "stale-token",
+      pid: 999_999_999,
+      command: "compile",
+      acquired_at: new Date().toISOString(),
+    }));
+    const approved = await run(
+      ["approve", "--run", "stale-lock", "--runs-dir", runs, "--allow-unresolved"],
+      repo,
+      env,
+    );
+    expect(approved.exitCode).toBe(0);
+    expect(await stat(join(runs, "stale-lock", ".operation.lock")).then(() => true, () => false)).toBe(false);
+  });
+
+  test("prevents workspace-write runs from racing in the same repository", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    for (const runId of ["repo-lock-a", "repo-lock-b"]) {
+      await run(
+        ["compile", "--objective=Repository lock", "--transcript", transcript, "--runs-dir", runs, "--run-id", runId],
+        repo,
+        env,
+      );
+      await run(["approve", "--allow-unresolved", "--run", runId, "--runs-dir", runs], repo, env);
+    }
+    const repositoryLock = join(repo, ".git", "agent-delegator-worktree.lock");
+    const first = run(
+      ["implement", "--run", "repo-lock-a", "--runs-dir", runs],
+      repo,
+      { ...env, FAKE_CODEX_DELAY_MS: "600" },
+    );
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (await stat(repositoryLock).then(() => true, () => false)) break;
+      await Bun.sleep(10);
+    }
+
+    const second = await run(["implement", "--run", "repo-lock-b", "--runs-dir", runs], repo, env);
+    expect(second.exitCode).toBe(1);
+    expect(second.stderr).toContain("Repository is busy with implement for run repo-lock-a");
+    expect((await first).exitCode).toBe(0);
+    expect(await stat(repositoryLock).then(() => true, () => false)).toBe(false);
+    expect((await run(["implement", "--run", "repo-lock-b", "--runs-dir", runs], repo, env)).exitCode).toBe(0);
   });
 
   test("re-binds approval to a moved Git HEAD only when explicitly acknowledged", async () => {
@@ -553,6 +1075,44 @@ describe("agent-delegator CLI", () => {
     expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(4);
   });
 
+  test("retries a failed resume without duplicating its decision ledger entry", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    await run(
+      [
+        "compile", "--objective", "Retry the same decision", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "resume-retry-ledger",
+      ],
+      repo,
+      env,
+    );
+    await run(["approve", "--run", "resume-retry-ledger", "--runs-dir", runs, "--allow-unresolved"], repo, env);
+    await run(["implement", "--run", "resume-retry-ledger", "--runs-dir", runs], repo, env);
+
+    const failed = await run(
+      [
+        "resume", "--run", "resume-retry-ledger", "--runs-dir", runs,
+        "--message=Use the fixture greeting.",
+      ],
+      repo,
+      { ...env, FAKE_CODEX_INVALID_RESULT: "1" },
+    );
+    expect(failed.exitCode).toBe(1);
+    const retried = await run(
+      [
+        "resume", "--run", "resume-retry-ledger", "--runs-dir", runs, "--retry",
+        "--message=Use the fixture greeting.",
+      ],
+      repo,
+      env,
+    );
+    expect(retried.exitCode).toBe(0);
+    const ledger = (await readFile(join(runs, "resume-retry-ledger", "decision-ledger.jsonl"), "utf8"))
+      .trim().split("\n");
+    expect(ledger).toHaveLength(1);
+    const state = JSON.parse(await readFile(join(runs, "resume-retry-ledger", "state.json"), "utf8"));
+    expect(state.implementationSessionId).toBe("thread-resumed");
+  });
+
   test("force-fails a stuck active run whose controller PID was recycled", async () => {
     const { repo, runs, transcript, env } = await fixture();
     await run(
@@ -569,6 +1129,15 @@ describe("agent-delegator CLI", () => {
     state.activeOperation = "implement";
     state.controllerPid = 1;
     await writeFile(statePath, JSON.stringify(state, null, 2));
+    const repositoryLock = join(repo, ".git", "agent-delegator-worktree.lock");
+    await writeFile(repositoryLock, JSON.stringify({
+      schema_version: "1",
+      token: "recycled-owner",
+      pid: 1,
+      command: "implement",
+      acquired_at: new Date().toISOString(),
+      run_id: "stuck",
+    }));
 
     const unforced = await run(["status", "--run", "stuck", "--runs-dir", runs], repo, env);
     expect(JSON.parse(unforced.stdout).status).toBe("implementing");
@@ -578,10 +1147,28 @@ describe("agent-delegator CLI", () => {
     const forcedState = JSON.parse(forced.stdout);
     expect(forcedState.status).toBe("failed");
     expect(forcedState.failurePhase).toBe("implement");
+    expect(await stat(repositoryLock).then(() => true, () => false)).toBe(false);
 
     const inactive = await run(["status", "--run", "stuck", "--runs-dir", runs, "--force-fail"], repo, env);
     expect(inactive.exitCode).toBe(1);
     expect(inactive.stderr).toContain("--force-fail requires an active run");
+
+    await writeFile(repositoryLock, JSON.stringify({
+      schema_version: "1",
+      token: "orphaned-after-failure",
+      pid: 1,
+      command: "implement",
+      acquired_at: new Date().toISOString(),
+      run_id: "stuck",
+    }));
+    const unlocked = await run(
+      ["status", "--run", "stuck", "--runs-dir", runs, "--force-unlock"],
+      repo,
+      env,
+    );
+    expect(unlocked.exitCode).toBe(0);
+    expect(JSON.parse(unlocked.stdout).repository_lock_removed).toBe(true);
+    expect(await stat(repositoryLock).then(() => true, () => false)).toBe(false);
 
     const restarted = await run(["implement", "--run", "stuck", "--runs-dir", runs, "--retry"], repo, env);
     expect(restarted.exitCode).toBe(0);
@@ -1086,6 +1673,40 @@ describe("agent-delegator CLI", () => {
     expect(JSON.parse(status.stdout)).toMatchObject({ status: "failed", failurePhase: "compile" });
   });
 
+  test("status checkpoints partial work from an interrupted workspace-write controller", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    await run(
+      ["compile", "--objective=Interrupted salvage", "--transcript", transcript, "--runs-dir", runs, "--run-id", "stale-write"],
+      repo,
+      env,
+    );
+    await run(["approve", "--allow-unresolved", "--run", "stale-write", "--runs-dir", runs], repo, env);
+    const statePath = join(runs, "stale-write", "state.json");
+    const state = JSON.parse(await readFile(statePath, "utf8"));
+    const approvedFingerprint = state.lastWorktreeSha256;
+    Object.assign(state, {
+      status: "implementing",
+      activeOperation: "implement",
+      controllerPid: 999_999_999,
+      attempts: { ...state.attempts, implement: 1 },
+    });
+    await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`);
+    await writeFile(join(repo, "interrupted-work.txt"), "recover me\n");
+
+    const recovered = await run(["status", "--run", "stale-write", "--runs-dir", runs], repo, env);
+    expect(recovered.exitCode).toBe(0);
+    expect(JSON.parse(recovered.stdout)).toMatchObject({
+      status: "failed",
+      failurePhase: "implement",
+      lastWorktreeSha256: approvedFingerprint,
+    });
+    expect(JSON.parse(recovered.stdout).failure).toContain("Partial worktree checkpoint saved");
+    expect(await readFile(
+      join(runs, "stale-write", "attempts", "implement", "001", "worktree.patch"),
+      "utf8",
+    )).toContain("recover me");
+  });
+
   test("records collection failure state instead of leaving an unclassified run", async () => {
     const { repo, runs, transcript, env } = await fixture();
     const contextPath = join(repo, "bad-context.json");
@@ -1125,5 +1746,237 @@ describe("agent-delegator CLI", () => {
     );
     expect(retried.exitCode).toBe(0);
     expect(JSON.parse(retried.stdout)).toMatchObject({ status: "compiled", attempt: 2 });
+  });
+
+  test("rejects malformed timeouts and checkpoints partial work after a real timeout", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    await run(
+      ["compile", "--objective=Timeout salvage", "--transcript", transcript, "--runs-dir", runs, "--run-id", "timeout-salvage"],
+      repo,
+      env,
+    );
+    await run(["approve", "--allow-unresolved", "--run", "timeout-salvage", "--runs-dir", runs], repo, env);
+    const statePath = join(runs, "timeout-salvage", "state.json");
+    const approvedState = JSON.parse(await readFile(statePath, "utf8"));
+
+    const malformed = await run(
+      ["implement", "--timeout-seconds=60m", "--run", "timeout-salvage", "--runs-dir", runs],
+      repo,
+      env,
+    );
+    expect(malformed.exitCode).toBe(1);
+    expect(malformed.stderr).toContain("must be an integer");
+    expect(JSON.parse(await readFile(statePath, "utf8"))).toMatchObject({ status: "approved" });
+
+    const timedOut = await run(
+      ["implement", "--timeout-seconds", "1", "--run", "timeout-salvage", "--runs-dir", runs],
+      repo,
+      {
+        ...env,
+        FAKE_CODEX_PARTIAL_WRITE: "1",
+        FAKE_CODEX_EARLY_EVENTS: "1",
+        FAKE_CODEX_DELAY_MS: "3000",
+      },
+    );
+    expect(timedOut.exitCode).toBe(1);
+    expect(timedOut.stderr).toContain("exceeded the 1000ms timeout");
+    expect(timedOut.stderr).toContain("partial worktree checkpoint saved");
+    const failedState = JSON.parse(await readFile(statePath, "utf8"));
+    expect(failedState).toMatchObject({
+      status: "failed",
+      failurePhase: "implement",
+      lastWorktreeSha256: approvedState.lastWorktreeSha256,
+      implementationSessionId: "thread-implementer",
+    });
+    const attemptDir = join(runs, "timeout-salvage", "attempts", "implement", "001");
+    expect(await readFile(join(attemptDir, "worktree.patch"), "utf8")).toContain("partial implementation");
+    expect(JSON.parse(await readFile(join(attemptDir, "checkpoint.json"), "utf8")).changed_files)
+      .toContain("partial-work.txt");
+    const failedEvent = (await readFile(join(runs, "timeout-salvage", "run-events.jsonl"), "utf8"))
+      .trim().split("\n").map((line) => JSON.parse(line))
+      .findLast((event) => event.stage === "implement" && event.event === "failed");
+    expect(failedEvent.usage).toEqual({ input_tokens: 200, cached_input_tokens: 50, output_tokens: 60 });
+
+    const unsafeRetry = await run(
+      ["implement", "--retry", "--run", "timeout-salvage", "--runs-dir", runs],
+      repo,
+      env,
+    );
+    expect(unsafeRetry.exitCode).toBe(1);
+    expect(unsafeRetry.stderr).toContain("Repository worktree changed");
+  });
+
+  test("uses an explicitly configured Codex executable", async () => {
+    const { repo, runs, transcript, codex, env } = await fixture();
+    const result = await run(
+      ["compile", "--objective=Configured command", "--transcript", transcript, "--runs-dir", runs, "--run-id", "custom-codex"],
+      repo,
+      { ...env, AGENT_DELEGATOR_CODEX_COMMAND: codex },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "compiled" });
+  });
+
+  test("rejects conflicting or ignored transcript selectors before collection", async () => {
+    const { repo, runs, transcript, env, log } = await fixture();
+    const conflict = await run(
+      [
+        "collect", "--objective=Selector conflict", "--transcript", transcript, "--session-id", "session-1",
+        "--runs-dir", runs, "--run-id", "selector-conflict",
+      ],
+      repo,
+      env,
+    );
+    expect(conflict.exitCode).toBe(1);
+    expect(conflict.stderr).toContain("--transcript and --session-id are mutually exclusive");
+
+    const contextPath = join(repo, "context.json");
+    await writeFile(contextPath, JSON.stringify({
+      schema_version: "1",
+      objective: "Context owns selectors",
+      project_profile: null,
+      profile_topics: [],
+      transcripts: [{ kind: "transcript", path: transcript, required: true }],
+      sources: [],
+    }));
+    const ignored = await run(
+      ["collect", "--context", contextPath, "--transcript", transcript, "--runs-dir", runs, "--run-id", "ignored-selector"],
+      repo,
+      env,
+    );
+    expect(ignored.exitCode).toBe(1);
+    expect(ignored.stderr).toContain("configure transcripts in the Context Request");
+    expect(await stat(log).then(() => true, () => false)).toBe(false);
+  });
+
+  test("refuses to silently discard hand edits to the rendered Brief", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    await run(
+      ["compile", "--objective=Rendered brief guard", "--transcript", transcript, "--runs-dir", runs, "--run-id", "brief-md-edit"],
+      repo,
+      env,
+    );
+    const renderedPath = join(runs, "brief-md-edit", "brief.md");
+    await writeFile(renderedPath, `${await readFile(renderedPath, "utf8")}\nmanual edit\n`);
+
+    const rejected = await run(
+      ["approve", "--allow-unresolved", "--run", "brief-md-edit", "--runs-dir", runs],
+      repo,
+      env,
+    );
+    expect(rejected.exitCode).toBe(1);
+    expect(rejected.stderr).toContain("brief.md differs from canonical brief.json");
+    expect(await readFile(renderedPath, "utf8")).toContain("manual edit");
+
+    expect((await run(["revalidate", "--run", "brief-md-edit", "--runs-dir", runs], repo, env)).exitCode).toBe(0);
+    expect((await run(
+      ["approve", "--allow-unresolved", "--run", "brief-md-edit", "--runs-dir", runs],
+      repo,
+      env,
+    )).exitCode).toBe(0);
+  });
+
+  test("resolves approval runs from an explicit repository cwd", async () => {
+    const { repo, transcript, env } = await fixture();
+    const compiled = await run(
+      ["compile", "--objective=Cwd resolution", "--transcript", transcript, "--run-id", "cwd-run"],
+      repo,
+      env,
+    );
+    expect(compiled.exitCode).toBe(0);
+    const outside = resolve(repo, "..");
+    const approved = await run(
+      ["approve", "--cwd", repo, "--allow-unresolved", "--run", "cwd-run"],
+      outside,
+      env,
+    );
+    expect(approved.exitCode).toBe(0);
+    expect(JSON.parse(approved.stdout)).toMatchObject({ status: "approved" });
+  });
+
+  test("uses the invoking subdirectory consistently for latest transcript fallback", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    const subdirectory = join(repo, "packages", "fixture");
+    const config = join(resolve(repo, ".."), "claude-config");
+    const projectDirectory = join(config, "projects", resolve(subdirectory).replace(/[^A-Za-z0-9]/g, "-"));
+    await mkdir(subdirectory, { recursive: true });
+    await mkdir(join(config, "sessions"), { recursive: true });
+    await mkdir(projectDirectory, { recursive: true });
+    const fallbackTranscript = join(projectDirectory, "subdirectory-session.jsonl");
+    await writeFile(fallbackTranscript, await readFile(transcript, "utf8"));
+
+    const collected = await run(
+      [
+        "collect", "--cwd", subdirectory, "--objective=Monorepo transcript", "--allow-latest-fallback",
+        "--claude-config-dir", config, "--runs-dir", runs, "--run-id", "subdirectory-fallback",
+      ],
+      repo,
+      env,
+    );
+    expect(collected.exitCode).toBe(0);
+    expect(JSON.parse(await readFile(join(runs, "subdirectory-fallback", "state.json"), "utf8")))
+      .toMatchObject({ transcriptPath: fallbackTranscript, transcriptResolutionMethod: "latest-for-cwd" });
+  });
+
+  test("previews stable visible transcript turns for range selection", async () => {
+    const { repo, transcript, env } = await fixture();
+    const result = await run(
+      ["resolve-transcript", "--transcript", transcript, "--turns", "--json"],
+      repo,
+      env,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      path: transcript,
+      method: "explicit",
+      turns: [
+        { turn: 1, source_line: 1, role: "user" },
+        { turn: 2, source_line: 2, role: "assistant" },
+      ],
+    });
+  });
+
+  test("preflights the local runtime and configured Codex command", async () => {
+    const { repo, codex, env } = await fixture();
+    const result = await run(
+      ["doctor", "--json"],
+      repo,
+      { ...env, AGENT_DELEGATOR_CODEX_COMMAND: codex },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      schema_version: "1",
+      agent_delegator_version: packageJson.version,
+      codex: { command: codex, version: "codex-cli fixture" },
+    });
+  });
+
+  test("rejects unsafe numeric selectors and oversized task metadata", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    const unsafeTurn = await run(
+      [
+        "collect", "--objective=Unsafe turn", "--transcript", transcript, "--runs-dir", runs,
+        "--run-id", "unsafe-turn", "--from-turn", "999999999999999999999",
+      ],
+      repo,
+      env,
+    );
+    expect(unsafeTurn.exitCode).toBe(1);
+    expect(unsafeTurn.stderr).toContain("--from-turn must be a positive integer");
+
+    const tooManyTags = Array.from({ length: 33 }, (_, index) => `tag-${index}`).join(",");
+    const oversizedMetadata = await run(
+      [
+        "collect", "--objective=Oversized metadata", "--transcript", transcript, "--runs-dir", runs,
+        "--run-id", "oversized-metadata", "--tags", tooManyTags,
+      ],
+      repo,
+      env,
+    );
+    expect(oversizedMetadata.exitCode).toBe(1);
+    expect(oversizedMetadata.stderr).toContain("--tags accepts at most 32");
   });
 });

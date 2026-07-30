@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runCodex } from "../src/codex.js";
+import { CodexInvocationError, runCodex } from "../src/codex.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -56,6 +56,23 @@ describe("runCodex", () => {
     expect(await readFile(eventsPath, "utf8")).toBe("not-json");
   });
 
+  test("warns in retained stderr when Codex emits malformed event lines", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "agent-delegator-codex-"));
+    temporaryDirectories.push(cwd);
+    const eventsPath = join(cwd, "events.jsonl");
+    const stderrPath = join(cwd, "stderr.log");
+
+    const result = await runCodex(["-c", "printf '%s\\n' 'not-json' '{\"type\":\"turn.completed\"}'"], {
+      cwd,
+      eventsPath,
+      stderrPath,
+      command: "/bin/sh",
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(await readFile(stderrPath, "utf8")).toContain("ignored 1 malformed Codex JSONL event line");
+  });
+
   test("extracts token usage from Codex events", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "agent-delegator-codex-"));
     temporaryDirectories.push(cwd);
@@ -81,7 +98,7 @@ describe("runCodex", () => {
 
     await expect(
       runCodex([], { cwd, eventsPath, command: join(cwd, "missing-codex") }),
-    ).rejects.toThrow();
+    ).rejects.toThrow("install Codex or set AGENT_DELEGATOR_CODEX_COMMAND");
   });
 
   test("escalates to SIGKILL when a timed-out process ignores SIGTERM", async () => {
@@ -119,5 +136,32 @@ describe("runCodex", () => {
     ).rejects.toThrow("timeout");
     expect(await readFile(stderrPath, "utf8")).toContain("diagnostic");
     expect((await stat(stderrPath)).mode & 0o777).toBe(0o600);
+  });
+
+  test("retains thread and usage telemetry observed before timeout", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "agent-delegator-codex-"));
+    temporaryDirectories.push(cwd);
+    const eventsPath = join(cwd, "events.jsonl");
+    let failure: unknown;
+    try {
+      await runCodex([
+        "-c",
+        "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"partial-thread\"}' " +
+          "'{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":9,\"cached_input_tokens\":2,\"output_tokens\":3}}'; sleep 2",
+      ], {
+        cwd,
+        eventsPath,
+        timeoutMs: 30,
+        command: "/bin/sh",
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(CodexInvocationError);
+    expect((failure as CodexInvocationError).partialResult).toMatchObject({
+      threadId: "partial-thread",
+      usage: { input_tokens: 9, cached_input_tokens: 2, output_tokens: 3 },
+    });
   });
 });

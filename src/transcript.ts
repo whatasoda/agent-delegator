@@ -46,6 +46,8 @@ interface TranscriptBlock {
 
 interface TranscriptEntry {
   type?: string;
+  isMeta?: boolean;
+  isSidechain?: boolean;
   message?: {
     role?: string;
     content?: TranscriptContent;
@@ -130,7 +132,7 @@ export function normalizeTranscriptDocument(
     } catch {
       continue;
     }
-    if (entry.type !== "user" && entry.type !== "assistant") continue;
+    if (entry.isMeta || entry.isSidechain || (entry.type !== "user" && entry.type !== "assistant")) continue;
     entries.push({ entry, sourceLine: lineIndex + 1 });
     const text = extractText(entry.message?.content).trim();
     if (!text) continue;

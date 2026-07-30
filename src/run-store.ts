@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { access, chmod, mkdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import stateSchema from "../schemas/state.schema.json";
 import { readJson, writeJsonAtomic } from "./files.js";
+import { appendRunHistoryEntry, type RunHistoryEntry } from "./registry.js";
 import type { TaskMetadata } from "./evidence.js";
 
 export type RunStatus =
@@ -13,6 +14,7 @@ export type RunStatus =
   | "compiled"
   | "approved"
   | "implementing"
+  | "researching"
   | "completed"
   | "needs-decision"
   | "blocked"
@@ -36,8 +38,8 @@ export interface RunState {
   implementationSessionId: string | null;
   latestResult: string | null;
   failure: string | null;
-  failurePhase?: "collect" | "compile" | "implement" | "resume" | null;
-  activeOperation?: "collect" | "compile" | "implement" | "resume" | null;
+  failurePhase?: "collect" | "compile" | "implement" | "resume" | "research" | "follow-up" | "iterate" | null;
+  activeOperation?: "collect" | "compile" | "implement" | "resume" | "research" | "follow-up" | "iterate" | null;
   controllerPid?: number | null;
   attempts?: { collect: number; compile: number; implement: number; resume: number };
   approvedWorktreeSha256?: string | null;
@@ -54,6 +56,29 @@ export interface RunState {
   delegatorVersion?: string;
   delegatorRevision?: string | null;
   delegatorDirty?: boolean | null;
+  delegatorArtifactSha256?: string | null;
+  delegationPattern?: "implementation" | "research" | "interactive" | "autonomous";
+  experimentVariant?: string | null;
+  researchModel?: string | null;
+  researchSessionId?: string | null;
+  researchTurnCount?: number;
+  iterationCount?: number;
+  autonomousStopReason?: "converged" | "needs-decision" | "blocked" | "turn-limit" | "time-limit" | "checkpoint-error" | null;
+}
+
+export function observedRunModels(state: RunState): {
+  compiler: string | null;
+  implementation: string | null;
+  research: string | null;
+} {
+  return {
+    compiler: (state.attempts?.compile ?? 0) > 0 ? state.compilerModel ?? "codex-default" : null,
+    implementation: (state.attempts?.implement ?? 0) + (state.attempts?.resume ?? 0) +
+        (state.iterationCount ?? 0) > 0
+      ? state.implementationModel ?? "codex-default"
+      : null,
+    research: (state.researchTurnCount ?? 0) > 0 ? state.researchModel ?? "codex-default" : null,
+  };
 }
 
 const validateRunStateSchema = new Ajv2020({ allErrors: true, formats: { "date-time": true } })
@@ -74,13 +99,13 @@ export async function createRunDirectory(runsDir: string, runId: string): Promis
   if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
     throw new Error(`Run directory escapes --runs-dir: ${runId}`);
   }
+  await mkdir(root, { recursive: true, mode: 0o700 });
   try {
-    await access(runDir);
-    throw new Error(`Run already exists: ${runId}`);
+    await mkdir(runDir, { mode: 0o700 });
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith("Run already exists:")) throw error;
+    if ((error as NodeJS.ErrnoException)?.code === "EEXIST") throw new Error(`Run already exists: ${runId}`);
+    throw error;
   }
-  await mkdir(runDir, { recursive: true, mode: 0o700 });
   await chmod(runDir, 0o700);
   await ensureRunsRootIgnored(root);
   return runDir;
@@ -122,4 +147,63 @@ export async function readRunState(runDir: string): Promise<RunState> {
 export async function writeRunState(runDir: string, state: RunState): Promise<void> {
   state.updatedAt = new Date().toISOString();
   await writeJsonAtomic(join(runDir, "state.json"), state);
+  if (state.observationVersion !== 1) return;
+  const evaluation = await historyEvaluation(runDir);
+  await appendRunHistoryEntry({
+    run_id: state.runId,
+    run_dir: resolve(runDir),
+    repo_root: state.repoRoot,
+    objective: state.objective,
+    status: state.status,
+    created_at: state.createdAt,
+    updated_at: state.updatedAt,
+    delegation_pattern: state.delegationPattern ?? "implementation",
+    experiment_variant: state.experimentVariant ?? null,
+    task_metadata: state.taskMetadata ?? { task_type: "other", complexity: "unknown", tags: [] },
+    models: observedRunModels(state),
+    attempts: {
+      collect: state.attempts?.collect ?? 0,
+      compile: state.attempts?.compile ?? 0,
+      implement: state.attempts?.implement ?? 0,
+      resume: state.attempts?.resume ?? 0,
+      research_turns: state.researchTurnCount ?? 0,
+      iteration_turns: state.iterationCount ?? 0,
+    },
+    failure: state.failure,
+    salvaged: state.status === "failed" && Boolean(
+      evaluation && ["accepted-as-is", "accepted-with-changes"].includes(evaluation.outcome),
+    ),
+    autonomous_stop_reason: state.autonomousStopReason ?? null,
+    evaluation,
+  });
 }
+
+async function historyEvaluation(runDir: string): Promise<RunHistoryEntryEvaluation | null> {
+  let value: unknown;
+  try {
+    value = await readJson<unknown>(join(runDir, "evaluation.json"));
+  } catch {
+    return null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const ratings = record.ratings;
+  if (!ratings || typeof ratings !== "object") return null;
+  return {
+    recorded_at: String(record.recorded_at ?? ""),
+    outcome: String(record.outcome ?? ""),
+    brief_quality: String(record.brief_quality ?? ""),
+    implementation_quality: String(record.implementation_quality ?? ""),
+    communication_quality: String(record.communication_quality ?? ""),
+    verification: String(record.verification ?? ""),
+    ratings: Object.fromEntries(
+      Object.entries(ratings).filter((entry): entry is [string, number] => typeof entry[1] === "number"),
+    ),
+    issue_categories: Array.isArray(record.issue_categories)
+      ? record.issue_categories.filter((item): item is string => typeof item === "string")
+      : [],
+    tags: Array.isArray(record.tags) ? record.tags.filter((item): item is string => typeof item === "string") : [],
+  };
+}
+
+type RunHistoryEntryEvaluation = NonNullable<RunHistoryEntry["evaluation"]>;

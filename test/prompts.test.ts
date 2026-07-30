@@ -12,4 +12,37 @@ describe("delegation prompts", () => {
     expect(normalized).toContain("add an unresolved item naming the coverage gap");
     expect(normalized).toContain("do not narrow an explicitly general requirement");
   });
+
+  test("keeps delegated research evidence-oriented and read-only", async () => {
+    const prompt = await readFile(resolve(import.meta.dir, "../prompts/research.md"), "utf8");
+    const normalized = prompt.replace(/\s+/g, " ");
+
+    expect(normalized).toContain("without editing the repository or mutating external state");
+    expect(normalized).toContain("name its basis");
+    expect(normalized).toContain("Do not commit, push, create a PR, deploy");
+  });
+
+  test("keeps autonomous improvement inside the approved Brief", async () => {
+    const prompt = await readFile(resolve(import.meta.dir, "../prompts/iterate.md"), "utf8");
+    const normalized = prompt.replace(/\s+/g, " ");
+
+    expect(normalized).toContain("The Brief remains the complete task contract");
+    expect(normalized).toContain("Do not broaden scope, revise a MUST, invent product behavior");
+    expect(normalized).toContain("Return `converged` when no further meaningful in-scope change is justified");
+    expect(normalized).toContain("Do not commit, push, create or merge a PR, deploy");
+  });
+
+  test("keeps delegated verification compatible with the workspace sandbox", async () => {
+    const compiler = (await readFile(resolve(import.meta.dir, "../prompts/compile-brief.md"), "utf8"))
+      .replace(/\s+/g, " ");
+    const implementer = (await readFile(resolve(import.meta.dir, "../prompts/implement.md"), "utf8"))
+      .replace(/\s+/g, " ");
+    const iterator = (await readFile(resolve(import.meta.dir, "../prompts/iterate.md"), "utf8"))
+      .replace(/\s+/g, " ");
+
+    expect(compiler).toContain("runnable in a workspace-write sandbox without credentials or network access");
+    expect(implementer).toContain("Record an unavailable owner-only check as `not-run`");
+    expect(implementer).toContain("do not return `blocked` solely because");
+    expect(iterator).toContain("network-dependent checks as `not-run`");
+  });
 });

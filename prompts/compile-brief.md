@@ -38,4 +38,9 @@ Rules:
    credentials, or mutate external systems. If collected repository policy requires one of those
    actions, do not promote it to a MUST or verification step. Record the policy conflict as an
    unresolved item so Claude can keep integration ownership or request a separate authorization.
-10. Do not edit files. Produce only the JSON object required by the supplied output schema.
+10. Verification assigned to Codex must be local, non-mutating, and runnable in a workspace-write
+    sandbox without credentials or network access. Keep deploys, uploads, production checks, and
+    other owner-only integration verification out of the delegated verification list; describe a
+    local substitute when one is supported by evidence. If a required verification environment is
+    undecided, record that gap as unresolved instead of creating a predictably blocked task.
+11. Do not edit files. Produce only the JSON object required by the supplied output schema.

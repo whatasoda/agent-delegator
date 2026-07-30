@@ -1,6 +1,9 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { once } from "node:events";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 export interface CodexRunResult {
   exitCode: number;
@@ -8,10 +11,38 @@ export interface CodexRunResult {
   usage: CodexUsage | null;
 }
 
+export class CodexInvocationError extends Error {
+  constructor(message: string, readonly partialResult: CodexRunResult) {
+    super(message);
+    this.name = "CodexInvocationError";
+  }
+}
+
 export interface CodexUsage {
   input_tokens: number;
   cached_input_tokens: number;
   output_tokens: number;
+}
+
+export async function probeCodex(
+  command = "codex",
+  cwd = process.cwd(),
+): Promise<{ command: string; version: string }> {
+  try {
+    const { stdout, stderr } = await execFileAsync(command, ["--version"], {
+      cwd,
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+    });
+    const version = `${stdout}${stderr}`.trim().split(/\r?\n/, 1)[0]?.trim();
+    if (!version) throw new Error("Codex --version returned no version text");
+    return { command, version };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+      throw new Error(`Codex executable not found: ${command}; install Codex or set AGENT_DELEGATOR_CODEX_COMMAND`);
+    }
+    throw new Error(`Codex preflight failed for ${command}: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 export async function runCodex(
@@ -38,8 +69,13 @@ export async function runCodex(
   let pending = "";
   let threadId: string | null = null;
   let usage: CodexUsage | null = null;
+  let malformedEventLines = 0;
   const observeEvent = (line: string): void => {
-    const event = JSON.parse(line) as {
+    const value = JSON.parse(line) as unknown;
+    if (!value || typeof value !== "object" || typeof (value as { type?: unknown }).type !== "string") {
+      throw new Error("Codex event must be an object with a string type");
+    }
+    const event = value as {
       type?: string;
       thread_id?: string;
       usage?: { input_tokens?: number; cached_input_tokens?: number; output_tokens?: number };
@@ -64,6 +100,7 @@ export async function runCodex(
       try {
         observeEvent(line);
       } catch {
+        malformedEventLines += 1;
         // The complete stream remains available in events.jsonl for diagnostics.
       }
     }
@@ -137,18 +174,32 @@ export async function runCodex(
   process.off("SIGINT", onSigint);
   process.off("SIGTERM", onSigterm);
   process.off("SIGHUP", onSighup);
-  events.end();
-  stderr?.end();
-  await Promise.all([once(events, "finish"), ...(stderr ? [once(stderr, "finish")] : [])]);
   if (pending.trim()) {
     try {
       observeEvent(pending);
     } catch {
+      malformedEventLines += 1;
       // Preserve malformed final content in events.jsonl; it is diagnostic, not control data.
     }
   }
-  if (spawnError) throw spawnError;
-  if (timedOut) throw new Error(`Codex exceeded the ${options.timeoutMs}ms timeout`);
-  if (interruptedSignal) throw new Error(`Codex was interrupted by ${interruptedSignal}`);
-  return { exitCode, threadId, usage };
+  if (malformedEventLines > 0) {
+    stderr?.write(
+      `agent-delegator: ignored ${malformedEventLines} malformed Codex JSONL event line(s); check Codex version compatibility and events.jsonl\n`,
+    );
+  }
+  events.end();
+  stderr?.end();
+  await Promise.all([once(events, "finish"), ...(stderr ? [once(stderr, "finish")] : [])]);
+  if (spawnError) {
+    if ((spawnError as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(
+        `Codex executable not found: ${options.command ?? "codex"}; install Codex or set AGENT_DELEGATOR_CODEX_COMMAND`,
+      );
+    }
+    throw spawnError;
+  }
+  const result = { exitCode, threadId, usage };
+  if (timedOut) throw new CodexInvocationError(`Codex exceeded the ${options.timeoutMs}ms timeout`, result);
+  if (interruptedSignal) throw new CodexInvocationError(`Codex was interrupted by ${interruptedSignal}`, result);
+  return result;
 }

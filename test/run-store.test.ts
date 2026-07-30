@@ -31,6 +31,17 @@ describe("run store", () => {
     expect((await stat(runDir)).mode & 0o777).toBe(0o700);
   });
 
+  test("allows only one concurrent creator for the same run id", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-delegator-runs-"));
+    temporaryDirectories.push(root);
+    const results = await Promise.allSettled([
+      createRunDirectory(join(root, "runs"), "same-run"),
+      createRunDirectory(join(root, "runs"), "same-run"),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+  });
+
   test("writes a gitignore that keeps run artifacts untracked", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-delegator-runs-"));
     temporaryDirectories.push(root);

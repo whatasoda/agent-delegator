@@ -1,0 +1,18 @@
+{
+  "$schema": "../schemas/evaluation-input.schema.json",
+  "schema_version": "1",
+  "evaluator": "claude",
+  "outcome": "accepted-as-is",
+  "brief_quality": "not-applicable",
+  "implementation_quality": "not-applicable",
+  "communication_quality": "efficient",
+  "verification": "passed",
+  "ratings": {
+    "requirements_fidelity": 5,
+    "communication_efficiency": 5,
+    "research_quality": 5
+  },
+  "issue_categories": [],
+  "notes": "Record whether the findings were supported, useful, and appropriately scoped.",
+  "tags": []
+}
