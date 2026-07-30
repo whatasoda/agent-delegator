@@ -206,6 +206,17 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
   二重ダンプする観測面の肥大も削る。
   （2026-07-30: 未指定で実行した slot を `codex-default` として集計し、installed build は Git revision
   の代わりに artifact SHA prefix で cohort 化。status の重複削減のみ残る）
+- [x] P5-20: repository規約準拠の独立smoke委譲 — completed runに `verify` を追加し、AGENTS.md、
+  CLAUDE.md、Brief、package scripts、test設定からcheckを選択。commandごとのbasisと結果を構造化し、
+  worktree driftをfail closed、検証運用失敗は完成済み実装stateと分離。（2026-07-30 done）
+- [x] P5-21: 親Claude終了後の選択的継続 — foreground既定を維持し、既存run operationを
+  `--detach` で独立processまたはHerdr非フォーカスタブへ起動。machine-private job台帳、ログ、`jobs`
+  一覧、lost検出を追加し、既存approval/lock/recoveryを再利用。（2026-07-30 done。cmux adapterは
+  local実行環境に未導入のため未検証候補として保留）
+- [x] P5-22: Codex local state分離 — shared既定に加えrun単位isolated/absolute custom `CODEX_HOME`、
+  auto/keyring/file/shared-file認証storeを選択可能にした。isolatedはkeyringを既定にし、明示的な
+  shared-fileだけ既存auth.jsonをsymlinkして設定・履歴から分離、
+  session resume互換性のため最初のCodex call後は固定。（2026-07-30 done）
 
 ### Trial — 実業務リポジトリ検証
 

@@ -52,11 +52,11 @@ directories are repository-local working state, not durable archives.
 ### Claude Code plugin
 
 The separately versioned thin plugin distributes the operator skill without bundling another CLI.
-Plugin `0.1.0` is verified with core CLI `0.1.0-alpha.2`; install that exact CLI version, then add
+Plugin `0.2.0` is verified with core CLI `0.1.0-alpha.3`; install that exact CLI version, then add
 this public repository as a marketplace:
 
 ```sh
-bun add --global @whatasoda/agent-delegator@0.1.0-alpha.2
+bun add --global @whatasoda/agent-delegator@0.1.0-alpha.3
 claude plugin marketplace add whatasoda/agent-delegator
 claude plugin install agent-delegator@whatasoda-agent-delegator --scope user
 ```
@@ -67,7 +67,7 @@ Run `/reload-plugins` in an existing Claude Code session, then invoke
 ```sh
 claude plugin marketplace update whatasoda-agent-delegator
 claude plugin update agent-delegator@whatasoda-agent-delegator --scope user
-bun add --global @whatasoda/agent-delegator@0.1.0-alpha.2
+bun add --global @whatasoda/agent-delegator@0.1.0-alpha.3
 ```
 
 The plugin checks the exact CLI version and runs `agent-delegator doctor --json` before delegation.
@@ -201,6 +201,22 @@ Decision requests are also converted to the standard `result.json`, so Claude ca
 the existing `resume` command. Codex still may not commit, push, open or merge a PR, deploy, or
 mutate external systems; Claude owns final diff review, verification, evaluation, and integration.
 
+## Repository-policy verification
+
+After a run reaches `completed`, delegate an independent smoke pass without reopening implementation:
+
+```sh
+agent-delegator verify --run <run-id>
+```
+
+The verifier reads applicable repository instructions such as `AGENTS.md` and `CLAUDE.md`, the
+approved Brief, package scripts, and test configuration before choosing the smallest useful check
+set. It records each command, its repository or Brief basis, status, and details in
+`verification.json` and `attempts/verify/<n>/`. Network-, credential-, deploy-, or owner-dependent
+checks remain `not-run`. The sandbox permits test-generated ignored output, but any worktree drift
+fails verification and saves a diagnostic checkpoint. An operational verification failure is kept
+separate from the already completed implementation lifecycle.
+
 ## Context Request
 
 [`examples/context-request.json`](./examples/context-request.json) shows the full format. It can
@@ -256,6 +272,8 @@ agent-delegator research \
 agent-delegator follow-up \
   --run <run-id> \
   --message="Narrow the recommendation using the collected evidence."
+agent-delegator verify --run <run-id>
+agent-delegator jobs --active
 agent-delegator status --run <run-id>
 agent-delegator status --run <run-id> --observation
 agent-delegator wait --run <run-id>
@@ -275,7 +293,11 @@ the Claude skill select different default models without hard-coding model names
 - `AGENT_DELEGATOR_BRIEF_MODEL`
 - `AGENT_DELEGATOR_IMPLEMENT_MODEL`
 - `AGENT_DELEGATOR_RESEARCH_MODEL`
+- `AGENT_DELEGATOR_VERIFICATION_MODEL`
 - `AGENT_DELEGATOR_CODEX_COMMAND` (an executable path or name for nonstandard installs or wrappers)
+- `AGENT_DELEGATOR_EXECUTION_BACKEND` (`process`, `herdr`, or `auto` for detached commands)
+- `AGENT_DELEGATOR_CODEX_HOME` (`shared`, `isolated`, or an absolute default for new runs)
+- `AGENT_DELEGATOR_CODEX_AUTH_STORE` (`auto`, `keyring`, `file`, or `shared-file`)
 
 These are independent model-selection slots, not automatic cheap/high-quality routing. If neither
 slot is configured, both stages may use the same Codex default model. Cost/quality-based routing is
@@ -283,7 +305,7 @@ a later roadmap item. Reports label an invoked but unpinned slot as `codex-defau
 mixing it with a stage that was never invoked.
 
 `doctor` is a read-only preflight for the installed agent-delegator/Bun/Codex versions, configured
-Codex executable, repository detection, and machine registry/history paths. The alpha line does not
+Codex executable/home/authentication status, repository detection, and machine registry/history paths. The alpha line does not
 hard-code a minimum Codex version yet; schema-constrained output is the compatibility feature probe,
 and malformed event lines are retained and warned as described below.
 
@@ -291,6 +313,60 @@ For free-text values, prefer the single-argument `--option="value"` form, such a
 `--message="Claude's decision"`. The CLI rejects unknown positional arguments, duplicate options,
 and guarded flags placed after a separately-valued free-text option so imperfect shell quoting
 cannot silently turn transcript-derived text into an override or disable redaction.
+
+## Detached execution
+
+Foreground execution remains the default for bounded work. For a long operation that should
+survive the parent Claude session or terminal, add `--detach` to an existing-run `compile`,
+`implement`, `resume`, `research`, `follow-up`, `loop`, or `verify` command:
+
+```sh
+agent-delegator loop --run <run-id> --max-turns=12 --max-minutes=180 \
+  --detach --backend=process
+agent-delegator jobs --active
+agent-delegator jobs --id <job-id>
+```
+
+`process` is the terminal-independent default. It launches a detached controller while preserving
+the normal run lock, repository worktree lock, approval gates, checkpoints, signal handling, and
+stale-controller recovery. `herdr` creates a non-focused tab in the current Herdr workspace and
+runs the same controller there; `auto` selects Herdr only inside a Herdr workspace and otherwise
+uses `process`. Each job has a private machine-level record and stdout/stderr logs under
+`~/.agent-delegator/headless/` (override with `AGENT_DELEGATOR_HEADLESS_DIR`). New-run compilation
+must first use `collect`, then `compile --run ... --detach`, so the job can be associated with a
+known run before the parent exits.
+
+`jobs` reports `launching`, `running`, `completed`, `failed`, or `lost`. A lost process controller
+means it exited without recording completion; inspect its logs and the run's `status`, then use the
+existing operation-specific retry path. Herdr tabs are left open for operator review. cmux was not
+available in the current validated environment; it remains an adapter candidate rather than an
+implicit untested backend.
+
+## Codex state isolation
+
+By default, Codex uses its existing shared home exactly as before. Select a per-run private home at
+run creation when configuration, logs, and session history should be isolated:
+
+```sh
+agent-delegator compile --objective="..." --codex-home=isolated
+agent-delegator doctor --codex-home=isolated --json
+```
+
+`isolated` stores Codex state under `~/.agent-delegator/codex-homes/<run-id>/` with private
+permissions. An absolute path selects a caller-managed custom home; `shared` keeps inherited
+`CODEX_HOME` behavior. `--codex-auth-store=auto|keyring|file|shared-file` controls Codex credential storage.
+Isolated/custom homes default to `keyring`, allowing the OS keychain to supply authentication
+without copying `auth.json`; shared mode defaults to Codex's existing `auto` behavior. If that
+keychain has no usable Codex login, authenticate for the selected home or explicitly choose another
+store. `shared-file` is an explicit compatibility option for machines whose existing login is in
+the shared home's `auth.json`: it creates a symlink to that one credential file while all other
+configuration, logs, and sessions stay isolated. It refuses to replace an existing isolated
+`auth.json`. Logging out or refreshing credentials through either home affects the shared file;
+protect both directories as credential-bearing state. The selection is fixed after the first Codex
+call so stored session IDs remain resumable.
+These controls map to Codex's documented
+[`CODEX_HOME`](https://learn.chatgpt.com/docs/config-file/environment-variables.md) and
+[`cli_auth_credentials_store`](https://learn.chatgpt.com/docs/auth.md#credential-storage) behavior.
 
 ## Transcript resolution
 
@@ -345,6 +421,7 @@ Important files:
 - `run-events.jsonl` — validated, append-only lifecycle events with timing, failure category,
   artifacts, metrics, model, and token usage when Codex emits it.
 - `result.json` — latest canonical implementer result.
+- `verification.json` — latest canonical repository-policy verification result.
 - `iteration.json` — latest autonomous iteration outcome; each raw turn remains under
   `attempts/iterate/<turn>/`.
 - `loop.json` / `loop-history.jsonl` — latest and append-only autonomous invocation summaries,
@@ -393,7 +470,8 @@ stderr log while the original lines stay in `events.jsonl`.
 Observation is designed for trial operation, not only incident debugging. A run records its input
 mix, initial tool identity plus each Codex attempt's tool revision/dirty fingerprint, stage
 durations, retries, model slots, Codex token usage, failure taxonomy, generated-versus-
-approved Brief changes, approval baseline, and each implementation checkpoint. Checkpoint patches
+approved Brief changes, approval baseline, Codex home/auth selection, detached backend/job IDs,
+verification outcome, and each implementation checkpoint. Checkpoint patches
 include tracked and untracked files; fingerprints also cover untracked file contents.
 
 `brief.json` is the only editable Brief source. `brief.md` is a rendered review view; approval now
@@ -424,7 +502,7 @@ variant cohort tables join accepted outcomes and average ratings with Codex call
 interactions, and review bytes. The report also exposes controller-cost proxies for the delegating
 agent: tracked CLI interactions per run, gate rejections (refusals that cost a diagnose-and-retry
 round trip without any Codex work), failed Codex calls (full paid retries), and the review-surface
-bytes (`brief.md`, `evidence.md`, `result.json`, or `research.json`) the delegating agent must read. These are workflow
+bytes (`brief.md`, `evidence.md`, `result.json`, `research.json`, or `verification.json`) the delegating agent must read. These are workflow
 observations, not Claude token measurements; they make delegation friction and review volume
 comparable across runs. Old runs without observation events remain reportable with
 unknown metadata and explicit telemetry gaps. Invalid/corrupt runs are listed instead of silently

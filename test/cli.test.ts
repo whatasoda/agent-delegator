@@ -81,6 +81,7 @@ const isResume = args.includes("resume");
 const isBrief = args.some((arg) => arg.endsWith("brief.schema.json"));
 const isResearch = args.some((arg) => arg.endsWith("research-result.schema.json"));
 const isIteration = args.some((arg) => arg.endsWith("iteration-result.schema.json"));
+const isVerification = args.some((arg) => arg.endsWith("verification-result.schema.json"));
 const citationTurn = Number(process.env.FAKE_CODEX_CITATION_TURN ?? "2");
 const citationSourceId = process.env.FAKE_CODEX_CITATION_SOURCE_ID ?? "source-001";
 const constraintQuote = process.env.FAKE_CODEX_CONSTRAINT_QUOTE ?? "must wait for the exact greeting wording";
@@ -143,6 +144,13 @@ const iteration = {
   remaining_risks: [],
   question: ""
 };
+const verification = {
+  status: process.env.FAKE_CODEX_VERIFICATION_STATUS ?? "passed",
+  summary: "Repository-policy smoke checks completed",
+  policy_sources: ["AGENTS.md", "package.json"],
+  checks: [{ command: "bun run test", status: "passed", details: "fixture passed", basis: "AGENTS.md" }],
+  remaining_risks: []
+};
 if (isIteration && iterationOutcome === "improved" && process.env.FAKE_CODEX_ITERATION_SKIP_WRITE !== "1") {
   appendFileSync("autonomous.txt", "iteration\\n");
 }
@@ -157,6 +165,9 @@ if (!isBrief && !isResearch && process.env.FAKE_CODEX_COMMIT === "1") {
 if (!isBrief && !isResearch && !isIteration && process.env.FAKE_CODEX_PARTIAL_WRITE === "1") {
   writeFileSync("partial-work.txt", "partial implementation\\n");
 }
+if (isVerification && process.env.FAKE_CODEX_VERIFY_WRITE === "1") {
+  writeFileSync("verification-side-effect.txt", "unexpected\\n");
+}
 if (process.env.FAKE_CODEX_EARLY_EVENTS === "1") {
   if (!(process.env.FAKE_CODEX_NO_IMPLEMENT_THREAD === "1" && !isBrief && !isResume)) {
     process.stdout.write(JSON.stringify({ type: "thread.started", thread_id: isResume ? "thread-resumed" : isBrief ? "thread-compiler" : "thread-implementer" }) + "\\n");
@@ -168,7 +179,7 @@ if (process.env.FAKE_CODEX_EARLY_EVENTS === "1") {
 }
 if (process.env.FAKE_CODEX_DELAY_MS) await Bun.sleep(Number(process.env.FAKE_CODEX_DELAY_MS));
 process.stderr.write("fake codex stderr noise\\n");
-writeFileSync(output, JSON.stringify(isBrief ? brief : isResearch ? research : isIteration ? iteration : result));
+writeFileSync(output, JSON.stringify(isBrief ? brief : isResearch ? research : isIteration ? iteration : isVerification ? verification : result));
 if (isResearch && process.env.FAKE_CODEX_WRITE === "1") writeFileSync("research-side-effect.txt", "unexpected\\n");
 if (process.env.FAKE_CODEX_EARLY_EVENTS !== "1" && !(process.env.FAKE_CODEX_NO_IMPLEMENT_THREAD === "1" && !isBrief && !isResume)) {
   process.stdout.write(JSON.stringify({ type: "thread.started", thread_id: isResume ? "thread-resumed" : isBrief ? "thread-compiler" : "thread-implementer" }) + "\\n");
@@ -604,6 +615,44 @@ describe("agent-delegator CLI", () => {
       average_ratings: { implementation_quality: null, research_quality: 5 },
     });
     expect(reportValue.comparisons.experiment_variant["one-shot-a"].tracked_invocations).toBe(4);
+  });
+
+  test("delegates repository-policy verification without changing implementation lifecycle state", async () => {
+    const { repo, runs, transcript, env, log } = await fixture();
+    await run(
+      [
+        "compile", "--objective", "Verify the completed fixture", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "verification-flow",
+      ],
+      repo,
+      env,
+    );
+    await run(["approve", "--run", "verification-flow", "--runs-dir", runs, "--allow-unresolved"], repo, env);
+    await run(
+      ["implement", "--run", "verification-flow", "--runs-dir", runs],
+      repo,
+      { ...env, FAKE_CODEX_IMPLEMENT_COMPLETED: "1" },
+    );
+
+    const verified = await run(["verify", "--run", "verification-flow", "--runs-dir", runs], repo, env);
+    expect(verified.exitCode).toBe(0);
+    expect(JSON.parse(verified.stdout)).toMatchObject({ status: "completed", verification_status: "passed" });
+    const verification = JSON.parse(await readFile(join(runs, "verification-flow", "verification.json"), "utf8"));
+    expect(verification.policy_sources).toEqual(["AGENTS.md", "package.json"]);
+    const calls = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]);
+    expect(calls.at(-1)).toContain("workspace-write");
+    expect(calls.at(-1)?.at(-1)).toContain("repository's own durable policy");
+
+    const mutated = await run(
+      ["verify", "--run", "verification-flow", "--runs-dir", runs],
+      repo,
+      { ...env, FAKE_CODEX_VERIFY_WRITE: "1" },
+    );
+    expect(mutated.exitCode).toBe(1);
+    expect(mutated.stderr).toContain("worktree changed during delegated verification");
+    const state = JSON.parse(await readFile(join(runs, "verification-flow", "state.json"), "utf8"));
+    expect(state).toMatchObject({ status: "completed", verificationStatus: null, verificationCount: 2 });
+    expect(state.verificationFailure).toContain("worktree changed during delegated verification");
   });
 
   test("retries a failed research follow-up without duplicating dialogue", async () => {
@@ -1197,6 +1246,26 @@ describe("agent-delegator CLI", () => {
     expect(streamed.stderr).toContain("fake codex stderr noise");
   });
 
+  test("persists an isolated Codex home and keyring selection for the whole run", async () => {
+    const { repo, runs, transcript, env, log } = await fixture();
+    const compiled = await run(
+      [
+        "compile", "--objective", "Isolated Codex state", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "isolated-home", "--codex-home", "isolated",
+      ],
+      repo,
+      env,
+    );
+    expect(compiled.exitCode).toBe(0);
+    const state = JSON.parse(await readFile(join(runs, "isolated-home", "state.json"), "utf8"));
+    expect(state).toMatchObject({ codexHomeMode: "isolated", codexAuthStore: "keyring" });
+    expect(state.codexHome).toBe(join(resolve(runs, ".."), "codex-homes", "isolated-home"));
+    expect((await stat(state.codexHome)).mode & 0o777).toBe(0o700);
+    const args = JSON.parse((await readFile(log, "utf8")).trim()) as string[];
+    expect(args).toContain("--config");
+    expect(args).toContain('cli_auth_credentials_store="keyring"');
+  });
+
   test("wait settles immediately on inactive runs and recovers dead controllers", async () => {
     const { repo, runs, transcript, env } = await fixture();
     await run(
@@ -1224,6 +1293,97 @@ describe("agent-delegator CLI", () => {
     expect(recoveredState.status).toBe("failed");
     expect(recoveredState.failurePhase).toBe("implement");
   });
+
+  test("runs an existing-run operation under a listed detached process controller", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    const headlessDir = join(runs, "headless-jobs");
+    const detachedEnv = { ...env, AGENT_DELEGATOR_HEADLESS_DIR: headlessDir, FAKE_CODEX_DELAY_MS: "300" };
+    const collected = await run(
+      [
+        "collect", "--objective", "Detached compile", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "detached-compile",
+      ],
+      repo,
+      detachedEnv,
+    );
+    expect(collected.exitCode).toBe(0);
+
+    const launched = await run(
+      [
+        "compile", "--run", "detached-compile", "--runs-dir", runs,
+        "--detach", "--backend", "process",
+      ],
+      repo,
+      detachedEnv,
+    );
+    expect(launched.exitCode).toBe(0);
+    const launch = JSON.parse(launched.stdout);
+    expect(launch).toMatchObject({ backend: "process", status: "running", run_id: "detached-compile" });
+
+    let job: Record<string, unknown> | undefined;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const listed = await run(["jobs", "--id", launch.job_id], repo, detachedEnv);
+      expect(listed.exitCode).toBe(0);
+      job = JSON.parse(listed.stdout).jobs[0];
+      if (job?.status === "completed" || job?.status === "failed" || job?.status === "lost") break;
+      await Bun.sleep(25);
+    }
+    expect(job).toMatchObject({ status: "completed", exit_code: 0, command: "compile" });
+    expect(JSON.parse(await readFile(join(runs, "detached-compile", "state.json"), "utf8")))
+      .toMatchObject({ status: "compiled", controllerPid: null });
+    expect(JSON.parse(await readFile(String(job?.stdout_path), "utf8"))).toMatchObject({ status: "compiled" });
+    const observed = await run(
+      ["status", "--run", "detached-compile", "--runs-dir", runs, "--observation"], repo, detachedEnv,
+    );
+    expect(JSON.parse(observed.stdout).observation).toMatchObject({
+      detached_execution: { jobs: 1, backends: ["process"], job_ids: [launch.job_id] },
+      codex_environment: { mode: "shared", auth_store: "auto" },
+    });
+  });
+
+  test.skipIf(process.env.AGENT_DELEGATOR_HERDR_SMOKE !== "1")(
+    "runs a detached existing-run operation in a non-focused Herdr tab",
+    async () => {
+      const { repo, runs, transcript, env } = await fixture();
+      const headlessDir = join(runs, "herdr-jobs");
+      const detachedEnv = { ...env, AGENT_DELEGATOR_HEADLESS_DIR: headlessDir };
+      await run(
+        [
+          "collect", "--objective", "Herdr detached compile", "--transcript", transcript,
+          "--runs-dir", runs, "--run-id", "herdr-compile",
+        ],
+        repo,
+        detachedEnv,
+      );
+      const launched = await run(
+        [
+          "compile", "--run", "herdr-compile", "--runs-dir", runs, "--dry-run",
+          "--detach", "--backend", "herdr",
+        ],
+        repo,
+        detachedEnv,
+      );
+      expect(launched.exitCode).toBe(0);
+      const launch = JSON.parse(launched.stdout);
+      expect(launch).toMatchObject({ backend: "herdr", status: "running" });
+      expect(launch.herdr_tab_id).toMatch(/^w\d+:t/);
+      try {
+        let job: Record<string, unknown> | undefined;
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+          const listed = await run(["jobs", "--id", launch.job_id], repo, detachedEnv);
+          job = JSON.parse(listed.stdout).jobs[0];
+          if (job?.status === "completed" || job?.status === "failed") break;
+          await Bun.sleep(25);
+        }
+        expect(job).toMatchObject({ status: "completed", backend: "herdr", exit_code: 0 });
+      } finally {
+        const close = Bun.spawn(["herdr", "tab", "close", launch.herdr_tab_id], {
+          stdout: "pipe", stderr: "pipe",
+        });
+        await close.exited;
+      }
+    },
+  );
 
   test("quick-path limit flags feed the implicit Context Request", async () => {
     const { repo, runs, transcript, env } = await fixture();

@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 
 import { randomUUID } from "node:crypto";
+import { spawn as spawnProcess } from "node:child_process";
+import { closeSync, openSync } from "node:fs";
 import { access, chmod, open, readFile, realpath, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,7 +18,14 @@ import {
   validateBrief,
   validateBriefEvidence,
 } from "./brief.js";
-import { CodexInvocationError, probeCodex, runCodex } from "./codex.js";
+import { CodexInvocationError, probeCodex, probeCodexAuthentication, runCodex } from "./codex.js";
+import {
+  codexConfigArgs,
+  codexProcessEnvironment,
+  prepareCodexEnvironment,
+  selectCodexEnvironment,
+  type CodexEnvironmentSelection,
+} from "./codex-environment.js";
 import {
   collectEvidence,
   type ContextRequest,
@@ -53,6 +62,20 @@ import {
 } from "./iteration.js";
 import { gitValue, repositoryRoot, worktreeFingerprint } from "./repository.js";
 import { type ImplementationResult, validateImplementationResult } from "./result.js";
+import { type VerificationResult, validateVerificationResult } from "./verification.js";
+import {
+  headlessJobDirectory,
+  headlessJobPath,
+  headlessRoot,
+  listHeadlessJobs,
+  makeHeadlessJobId,
+  finishHeadlessJob,
+  readHeadlessJob,
+  waitForHeadlessLaunch,
+  writeHeadlessJob,
+  type HeadlessBackend,
+  type HeadlessJob,
+} from "./headless.js";
 import {
   createRunDirectory,
   makeRunId,
@@ -100,10 +123,13 @@ const argumentSpecs: Record<string, ArgumentSpec> = {
       "--variant",
       "--max-source-bytes",
       "--max-transcript-input-bytes",
+      "--codex-home",
+      "--codex-auth-store",
+      "--backend",
     ],
-    flags: ["--allow-latest-fallback", "--no-redact", "--dry-run", "--retry", "--acknowledge-policy-warning"],
+    flags: ["--allow-latest-fallback", "--no-redact", "--dry-run", "--retry", "--acknowledge-policy-warning", "--detach"],
     textValues: ["--objective"],
-    guardedFlags: ["--allow-latest-fallback", "--no-redact", "--dry-run", "--retry", "--acknowledge-policy-warning"],
+    guardedFlags: ["--allow-latest-fallback", "--no-redact", "--dry-run", "--retry", "--acknowledge-policy-warning", "--detach"],
   },
   collect: {
     values: [
@@ -124,6 +150,8 @@ const argumentSpecs: Record<string, ArgumentSpec> = {
       "--variant",
       "--max-source-bytes",
       "--max-transcript-input-bytes",
+      "--codex-home",
+      "--codex-auth-store",
     ],
     flags: ["--allow-latest-fallback", "--no-redact"],
     textValues: ["--objective"],
@@ -137,14 +165,14 @@ const argumentSpecs: Record<string, ArgumentSpec> = {
     guardedFlags: ["--allow-unresolved", "--allow-base-change"],
   },
   implement: {
-    values: ["--cwd", "--run", "--runs-dir", "--model", "--timeout-seconds"],
-    flags: ["--allow-base-change", "--allow-worktree-change", "--retry"],
+    values: ["--cwd", "--run", "--runs-dir", "--model", "--timeout-seconds", "--backend"],
+    flags: ["--allow-base-change", "--allow-worktree-change", "--retry", "--detach"],
   },
   resume: {
-    values: ["--cwd", "--run", "--runs-dir", "--message", "--addendum", "--model", "--timeout-seconds"],
-    flags: ["--allow-base-change", "--allow-worktree-change", "--retry"],
+    values: ["--cwd", "--run", "--runs-dir", "--message", "--addendum", "--model", "--timeout-seconds", "--backend"],
+    flags: ["--allow-base-change", "--allow-worktree-change", "--retry", "--detach"],
     textValues: ["--message"],
-    guardedFlags: ["--allow-base-change", "--allow-worktree-change", "--retry"],
+    guardedFlags: ["--allow-base-change", "--allow-worktree-change", "--retry", "--detach"],
   },
   research: {
     values: [
@@ -152,20 +180,25 @@ const argumentSpecs: Record<string, ArgumentSpec> = {
       "--transcript", "--session-id", "--claude-config-dir", "--from-turn", "--to-turn", "--model",
       "--timeout-seconds", "--task-type", "--complexity", "--tags", "--variant",
       "--max-source-bytes", "--max-transcript-input-bytes",
+      "--codex-home", "--codex-auth-store", "--backend",
     ],
-    flags: ["--allow-latest-fallback", "--no-redact", "--retry"],
+    flags: ["--allow-latest-fallback", "--no-redact", "--retry", "--detach"],
     textValues: ["--objective"],
-    guardedFlags: ["--allow-latest-fallback", "--no-redact", "--retry"],
+    guardedFlags: ["--allow-latest-fallback", "--no-redact", "--retry", "--detach"],
   },
   "follow-up": {
-    values: ["--cwd", "--run", "--runs-dir", "--message", "--model", "--timeout-seconds"],
-    flags: ["--retry"],
+    values: ["--cwd", "--run", "--runs-dir", "--message", "--model", "--timeout-seconds", "--backend"],
+    flags: ["--retry", "--detach"],
     textValues: ["--message"],
-    guardedFlags: ["--retry"],
+    guardedFlags: ["--retry", "--detach"],
   },
   loop: {
-    values: ["--cwd", "--run", "--runs-dir", "--model", "--timeout-seconds", "--max-turns", "--max-minutes"],
-    flags: ["--allow-base-change", "--allow-worktree-change", "--retry"],
+    values: ["--cwd", "--run", "--runs-dir", "--model", "--timeout-seconds", "--max-turns", "--max-minutes", "--backend"],
+    flags: ["--allow-base-change", "--allow-worktree-change", "--retry", "--detach"],
+  },
+  verify: {
+    values: ["--cwd", "--run", "--runs-dir", "--model", "--timeout-seconds", "--backend"],
+    flags: ["--allow-base-change", "--allow-worktree-change", "--detach"],
   },
   status: {
     values: ["--cwd", "--run", "--runs-dir"],
@@ -175,7 +208,8 @@ const argumentSpecs: Record<string, ArgumentSpec> = {
   evaluate: { values: ["--cwd", "--run", "--runs-dir", "--evaluation"] },
   report: { values: ["--cwd", "--runs-dir", "--format"], flags: ["--all"] },
   history: { values: ["--format", "--pattern", "--variant", "--limit"] },
-  doctor: { values: ["--cwd"], flags: ["--json"] },
+  jobs: { values: ["--id"], flags: ["--active"] },
+  doctor: { values: ["--cwd", "--codex-home", "--codex-auth-store"], flags: ["--json"] },
   help: {},
   "--help": {},
   "-h": {},
@@ -315,6 +349,49 @@ function codexCommand(): string {
   return command;
 }
 
+function codexEnvironmentForState(state: RunState): CodexEnvironmentSelection {
+  return {
+    mode: state.codexHomeMode ?? "shared",
+    home: state.codexHome ?? null,
+    authStore: state.codexAuthStore ?? "auto",
+  };
+}
+
+async function configureCodexEnvironment(args: string[], state: RunState): Promise<void> {
+  const requestedHome = option(args, "--codex-home");
+  const requestedAuthStore = option(args, "--codex-auth-store");
+  const hasPersistedSelection = state.codexHomeMode !== undefined;
+  if (!requestedHome && !requestedAuthStore && hasPersistedSelection) {
+    await prepareCodexEnvironment(codexEnvironmentForState(state));
+    return;
+  }
+  const selection = selectCodexEnvironment(state.runId, requestedHome, requestedAuthStore);
+  const priorCalls = (state.attempts?.compile ?? 0) + (state.attempts?.implement ?? 0) +
+    (state.attempts?.resume ?? 0) + (state.researchTurnCount ?? 0) + (state.iterationCount ?? 0);
+  if (hasPersistedSelection && priorCalls > 0) {
+    const current = codexEnvironmentForState(state);
+    if (JSON.stringify(current) !== JSON.stringify(selection)) {
+      throw new Error("Codex home and auth store are fixed after the first Codex call so saved sessions remain resumable");
+    }
+  }
+  await prepareCodexEnvironment(selection);
+  state.codexHomeMode = selection.mode;
+  state.codexHome = selection.home;
+  state.codexAuthStore = selection.authStore;
+}
+
+function codexRunEnvironment(state: RunState): Pick<Parameters<typeof runCodex>[1], "env"> {
+  return { env: codexProcessEnvironment(codexEnvironmentForState(state)) };
+}
+
+function codexArgsForState(args: string[], state: RunState): string[] {
+  const configured = [...args];
+  const environmentArgs = codexConfigArgs(codexEnvironmentForState(state));
+  const insertionIndex = configured[0] === "exec" && configured[1] === "resume" ? 2 : 1;
+  configured.splice(insertionIndex, 0, ...environmentArgs);
+  return configured;
+}
+
 async function verifyApprovedInputs(
   runDir: string,
   state: RunState,
@@ -429,10 +506,21 @@ Repository root: ${repoRoot}
 Return the structured research result only.`;
 }
 
+function verificationPrompt(runDir: string, repoRoot: string): string {
+  return `Read and follow ${join(packageRoot, "prompts", "verify.md")}.
+
+Approved brief: ${join(runDir, "brief.md")}
+Implementation result: ${join(runDir, "result.json")}
+Repository root: ${repoRoot}
+
+Choose checks from the approved Brief and the repository's own durable policy and tooling. Verify
+the existing implementation without fixing it. Return the structured verification result only.`;
+}
+
 async function observeGuardedOperation(
   runDir: string,
   state: RunState,
-  stage: "compile" | "implement" | "resume" | "research" | "follow-up" | "iterate",
+  stage: "compile" | "implement" | "resume" | "research" | "follow-up" | "iterate" | "verify",
   attempt: number,
   operation: () => Promise<void>,
 ): Promise<void> {
@@ -610,7 +698,7 @@ async function delegatorIdentity(): Promise<{
 
 async function writeAttemptMetadata(
   attemptDir: string,
-  stage: "compile" | "implement" | "resume" | "research" | "follow-up" | "iterate",
+  stage: "compile" | "implement" | "resume" | "research" | "follow-up" | "iterate" | "verify",
   attempt: number,
 ): Promise<void> {
   const tool = await delegatorIdentity();
@@ -700,6 +788,7 @@ async function prepareRun(
     researchTurnCount: 0,
     iterationCount: 0,
   };
+  await configureCodexEnvironment(args, state);
   await writeRunState(runDir, state);
   await appendRunEvent(runDir, {
     stage: "collect", event: "started", attempt: 1, duration_ms: null, model: null,
@@ -847,13 +936,14 @@ async function executeResearchTurn(
     });
   };
   try {
-    codexResult = await runCodex(codexArgs, {
+    codexResult = await runCodex(codexArgsForState(codexArgs, state), {
       cwd: state.repoRoot,
       eventsPath: join(attemptDir, "events.jsonl"),
       stderrPath: join(attemptDir, "stderr.log"),
       timeoutMs: callTimeout,
       command,
       streamStderr: streamCodexStderr(),
+      ...codexRunEnvironment(state),
     });
     state.researchSessionId = codexResult.threadId ?? state.researchSessionId;
     await captureWorktreeAfter();
@@ -965,6 +1055,7 @@ async function commandResearch(args: string[]): Promise<void> {
     runDir = prepared.runDir;
     state = prepared.state;
   }
+  await configureCodexEnvironment(args, state);
   if (state.delegationPattern !== "interactive") state.delegationPattern = "research";
   await observeGuardedOperation(runDir, state, "research", (state.researchTurnCount ?? 0) + 1, async () => {
     await verifyCollectionAnchor(runDir, state);
@@ -1007,6 +1098,7 @@ async function commandFollowUp(args: string[]): Promise<void> {
   codexCommand();
   const runDir = await resolveRun(args, resolve(option(args, "--cwd") ?? process.cwd()));
   const state = await readRunState(runDir);
+  await configureCodexEnvironment(args, state);
   if (state.delegationPattern !== "research" && state.delegationPattern !== "interactive") {
     throw new Error("follow-up requires a research run");
   }
@@ -1075,6 +1167,7 @@ async function commandCompile(args: string[]): Promise<void> {
     state = prepared.state;
     sourceCount = prepared.sourceCount;
   }
+  await configureCodexEnvironment(args, state);
   const policyWarningsPath = join(runDir, "policy-warnings.json");
   if (!dryRun && await exists(policyWarningsPath) && !flag(args, "--acknowledge-policy-warning")) {
     const warning = await readJson<{ warnings?: { action?: string }[] }>(policyWarningsPath);
@@ -1145,13 +1238,14 @@ async function commandCompile(args: string[]): Promise<void> {
   let citationSourceCorrectionCount = 0;
   let citationTurnCorrectionCount = 0;
   try {
-    codexResult = await runCodex(codexArgs, {
+    codexResult = await runCodex(codexArgsForState(codexArgs, state), {
       cwd: state.repoRoot,
       eventsPath: join(compileAttemptDir, "events.jsonl"),
       stderrPath: join(compileAttemptDir, "stderr.log"),
       timeoutMs: callTimeout!,
       command: command!,
       streamStderr: streamCodexStderr(),
+      ...codexRunEnvironment(state),
     });
     state.compilerSessionId = codexResult.threadId;
     if (codexResult.exitCode !== 0 || !(await exists(generatedPath))) {
@@ -1424,6 +1518,7 @@ async function commandImplement(
 ): Promise<{ runDir: string; state: RunState }> {
   const runDir = await resolveRun(args, resolve(option(args, "--cwd") ?? process.cwd()));
   const state = await readRunState(runDir);
+  await configureCodexEnvironment(args, state);
   const callTimeout = timeoutMs(args);
   const command = codexCommand();
   const failedWorkspaceWrite = state.failurePhase === "implement" ||
@@ -1481,13 +1576,14 @@ async function commandImplement(
   });
   let codexResult: Awaited<ReturnType<typeof runCodex>> | null = null;
   try {
-    codexResult = await runCodex(codexArgs, {
+    codexResult = await runCodex(codexArgsForState(codexArgs, state), {
       cwd: state.repoRoot,
       eventsPath: join(implementAttemptDir, "events.jsonl"),
       stderrPath: join(implementAttemptDir, "stderr.log"),
       timeoutMs: callTimeout,
       command,
       streamStderr: streamCodexStderr(),
+      ...codexRunEnvironment(state),
     });
     state.implementationSessionId = codexResult.threadId;
     if (codexResult.exitCode !== 0 || !(await exists(generatedResultPath))) {
@@ -1591,6 +1687,126 @@ async function commandImplement(
   }
 }
 
+async function commandVerify(args: string[]): Promise<void> {
+  const runDir = await resolveRun(args, resolve(option(args, "--cwd") ?? process.cwd()));
+  const state = await readRunState(runDir);
+  await configureCodexEnvironment(args, state);
+  if (state.status !== "completed") {
+    throw new Error(`Verification requires a completed implementation; current status is ${state.status}`);
+  }
+  const attempt = (state.verificationCount ?? 0) + 1;
+  await observeGuardedOperation(runDir, state, "verify", attempt, async () => {
+    await verifyApprovedInputs(runDir, state, args, state.lastWorktreeSha256 ?? null);
+  });
+  const command = codexCommand();
+  const callTimeout = timeoutMs(args);
+  const model = option(args, "--model") ?? state.verificationModel ??
+    process.env.AGENT_DELEGATOR_VERIFICATION_MODEL ?? null;
+  const attemptDir = attemptDirectory(runDir, "verify", attempt);
+  const attemptPrefix = `attempts/verify/${String(attempt).padStart(3, "0")}`;
+  const resultPath = join(attemptDir, "result.json");
+  const promptPath = join(attemptDir, "prompt.md");
+  const canonicalPath = join(runDir, "verification.json");
+  const startedAt = Date.now();
+  const expectedHead = await gitValue(state.repoRoot, "rev-parse", "HEAD");
+  const expectedWorktree = await worktreeFingerprint(state.repoRoot);
+  await writeAttemptMetadata(attemptDir, "verify", attempt);
+  await writeText(promptPath, verificationPrompt(runDir, state.repoRoot));
+  const codexArgs = [
+    "exec", "--sandbox", "workspace-write", "--json", "--output-schema",
+    join(packageRoot, "schemas", "verification-result.schema.json"),
+    "--output-last-message", resultPath, "--cd", state.repoRoot,
+  ];
+  if (model) codexArgs.push("--model", model);
+  codexArgs.push(await readFile(promptPath, "utf8"));
+  state.status = "verifying";
+  state.verificationModel = model;
+  state.verificationCount = attempt;
+  state.verificationFailure = null;
+  state.activeOperation = "verify";
+  state.controllerPid = process.pid;
+  await writeRunState(runDir, state);
+  await appendRunEvent(runDir, {
+    stage: "verify", event: "started", attempt, duration_ms: null, model,
+    run_status: state.status, failure_category: null, message: null, usage: null, metrics: {},
+    artifacts: [`${attemptPrefix}/attempt-metadata.json`, `${attemptPrefix}/prompt.md`],
+  });
+  let codexResult: Awaited<ReturnType<typeof runCodex>> | null = null;
+  try {
+    codexResult = await runCodex(codexArgsForState(codexArgs, state), {
+      cwd: state.repoRoot,
+      eventsPath: join(attemptDir, "events.jsonl"),
+      stderrPath: join(attemptDir, "stderr.log"),
+      timeoutMs: callTimeout,
+      command,
+      streamStderr: streamCodexStderr(),
+      ...codexRunEnvironment(state),
+    });
+    state.verificationSessionId = codexResult.threadId ?? state.verificationSessionId ?? null;
+    if (codexResult.exitCode !== 0 || !(await exists(resultPath))) {
+      throw new Error(`Verifier exited with code ${codexResult.exitCode}; inspect ${attemptPrefix}/stderr.log`);
+    }
+    await chmod(resultPath, 0o600);
+    const payload = await readJson<unknown>(resultPath);
+    const errors = validateVerificationResult(payload);
+    if (errors.length) throw new Error(`Verifier result failed validation: ${errors.join("; ")}`);
+    if (await gitValue(state.repoRoot, "rev-parse", "HEAD") !== expectedHead) {
+      throw new Error("Repository HEAD changed during delegated verification; inspect it before continuing");
+    }
+    if (await worktreeFingerprint(state.repoRoot) !== expectedWorktree) {
+      await captureWorktreeCheckpoint(state.repoRoot, attemptDir);
+      throw new Error("Repository worktree changed during delegated verification; inspect the verification checkpoint");
+    }
+    const validated = payload as VerificationResult;
+    await writeJson(canonicalPath, validated);
+    state.status = "completed";
+    state.latestVerificationPath = canonicalPath;
+    state.verificationStatus = validated.status;
+    state.verificationFailure = null;
+    state.activeOperation = null;
+    state.controllerPid = null;
+    await writeRunState(runDir, state);
+    await appendRunEvent(runDir, {
+      stage: "verify", event: "completed", attempt, duration_ms: Date.now() - startedAt, model,
+      run_status: state.status, failure_category: null, message: validated.summary, usage: codexResult.usage,
+      metrics: { codex_invoked: true, exit_code: codexResult.exitCode, worktree_changed: false },
+      artifacts: [`${attemptPrefix}/attempt-metadata.json`, `${attemptPrefix}/result.json`, "verification.json"],
+    });
+    print({
+      run_id: state.runId, run_dir: runDir, status: state.status,
+      verification_status: validated.status, verification: canonicalPath, attempt,
+    });
+  } catch (error) {
+    if (!codexResult && error instanceof CodexInvocationError) {
+      codexResult = error.partialResult;
+      state.verificationSessionId = codexResult.threadId ?? state.verificationSessionId ?? null;
+    }
+    state.status = "completed";
+    state.verificationStatus = null;
+    state.verificationFailure = error instanceof Error ? error.message : String(error);
+    state.activeOperation = null;
+    state.controllerPid = null;
+    await writeRunState(runDir, state);
+    await appendRunEvent(runDir, {
+      stage: "verify", event: "failed", attempt, duration_ms: Date.now() - startedAt, model,
+      run_status: state.status, failure_category: classifyFailure(error, "verify"),
+      message: state.verificationFailure, usage: codexResult?.usage ?? null,
+      metrics: {
+        codex_invoked: true,
+        ...(codexResult ? { exit_code: codexResult.exitCode } : {}),
+        worktree_changed: await worktreeFingerprint(state.repoRoot).then((value) => value !== expectedWorktree, () => false),
+      },
+      artifacts: [
+        `${attemptPrefix}/attempt-metadata.json`, `${attemptPrefix}/events.jsonl`, `${attemptPrefix}/stderr.log`,
+        ...(await exists(resultPath) ? [`${attemptPrefix}/result.json`] : []),
+        ...(await exists(join(attemptDir, "checkpoint.json"))
+          ? [`${attemptPrefix}/checkpoint.json`, `${attemptPrefix}/worktree.patch`] : []),
+      ],
+    });
+    throw new Error(state.verificationFailure);
+  }
+}
+
 function iterationPrompt(runDir: string, state: RunState, turn: number): string {
   return `Read and follow ${join(packageRoot, "prompts", "iterate.md")}.
 
@@ -1654,13 +1870,14 @@ async function executeIterationTurn(
   });
   let codexResult: Awaited<ReturnType<typeof runCodex>> | null = null;
   try {
-    codexResult = await runCodex(codexArgs, {
+    codexResult = await runCodex(codexArgsForState(codexArgs, state), {
       cwd: state.repoRoot,
       eventsPath: join(attemptDir, "events.jsonl"),
       stderrPath: join(attemptDir, "stderr.log"),
       timeoutMs: timeout,
       command,
       streamStderr: streamCodexStderr(),
+      ...codexRunEnvironment(state),
     });
     state.implementationSessionId = codexResult.threadId ?? state.implementationSessionId;
     if (codexResult.exitCode !== 0 || !(await exists(resultPath))) {
@@ -1839,6 +2056,7 @@ async function commandLoop(args: string[]): Promise<void> {
   const invokedAt = new Date().toISOString();
   let runDir = await resolveRun(args, resolve(option(args, "--cwd") ?? process.cwd()));
   let state = await readRunState(runDir);
+  await configureCodexEnvironment(args, state);
   const maxTurns = numberOption(args, "--max-turns") ?? 3;
   if (maxTurns > 100) throw new Error("--max-turns must not exceed 100");
   const maxMinutes = numberOption(args, "--max-minutes") ?? 180;
@@ -1952,6 +2170,7 @@ async function commandLoop(args: string[]): Promise<void> {
 async function commandResume(args: string[]): Promise<void> {
   const runDir = await resolveRun(args, resolve(option(args, "--cwd") ?? process.cwd()));
   const state = await readRunState(runDir);
+  await configureCodexEnvironment(args, state);
   const callTimeout = timeoutMs(args);
   const command = codexCommand();
   const retryable = state.status === "failed" && state.failurePhase === "resume" && flag(args, "--retry");
@@ -2033,13 +2252,14 @@ Continue the already approved implementation and return the structured result.`;
   });
   let codexResult: Awaited<ReturnType<typeof runCodex>> | null = null;
   try {
-    codexResult = await runCodex(codexArgs, {
+    codexResult = await runCodex(codexArgsForState(codexArgs, state), {
       cwd: state.repoRoot,
       eventsPath: join(resumeAttemptDir, "events.jsonl"),
       stderrPath: join(resumeAttemptDir, "stderr.log"),
       timeoutMs: callTimeout,
       command,
       streamStderr: streamCodexStderr(),
+      ...codexRunEnvironment(state),
     });
     state.implementationSessionId = codexResult.threadId ?? state.implementationSessionId;
     if (codexResult.exitCode !== 0 || !(await exists(resultPath))) {
@@ -2276,7 +2496,8 @@ async function repositoryLockPath(repoRoot: string): Promise<string> {
 }
 
 function isActiveRunStatus(state: RunState): boolean {
-  return state.status === "collecting" || state.status === "compiling" || state.status === "implementing" || state.status === "researching";
+  return state.status === "collecting" || state.status === "compiling" || state.status === "implementing" ||
+    state.status === "researching" || state.status === "verifying";
 }
 
 async function recoverInterruptedRun(runDir: string, state: RunState, forced: boolean): Promise<boolean> {
@@ -2285,8 +2506,25 @@ async function recoverInterruptedRun(runDir: string, state: RunState, forced: bo
   const interruptedOperation = state.activeOperation ?? (
     state.status === "compiling" ? "compile" :
     state.status === "collecting" ? "collect" :
-    state.status === "researching" ? "research" : "implement"
+    state.status === "researching" ? "research" :
+    state.status === "verifying" ? "verify" : "implement"
   );
+  if (interruptedOperation === "verify") {
+    state.status = "completed";
+    state.verificationStatus = null;
+    state.verificationFailure = forced
+      ? "The verification operation was force-failed by the operator; inspect its artifacts and rerun verify."
+      : "The verification controller process is no longer running; inspect its artifacts and rerun verify.";
+    state.activeOperation = null;
+    state.controllerPid = null;
+    await writeRunState(runDir, state);
+    await appendRunEvent(runDir, {
+      stage: "status", event: "recovered", attempt: null, duration_ms: null, model: null,
+      run_status: state.status, failure_category: "interrupted", message: state.verificationFailure,
+      usage: null, metrics: {}, artifacts: ["state.json"],
+    });
+    return true;
+  }
   const workspaceAttempt = interruptedOperation === "implement"
     ? state.attempts?.implement ?? 0
     : interruptedOperation === "resume"
@@ -2472,15 +2710,185 @@ async function commandHistory(args: string[]): Promise<void> {
 
 History: ${historyPath()}
 
-| Created | Run | Pattern | Variant | Status | Stop reason | C/I/R/Research/Iterate | Evaluation | Research rating | Repository | Objective |
-| --- | --- | --- | --- | --- | --- | --- | --- | ---: | --- | --- |
-${entries.map((entry) => `| ${cell(entry.created_at)} | ${cell(entry.run_id)} | ${cell(entry.delegation_pattern)} | ${cell(entry.experiment_variant ?? "-")} | ${cell(entry.salvaged ? `${entry.status} (salvaged)` : entry.status)} | ${cell(entry.autonomous_stop_reason ?? "-")} | ${entry.attempts.compile ?? 0}/${entry.attempts.implement ?? 0}/${entry.attempts.resume ?? 0}/${entry.attempts.research_turns ?? 0}/${entry.attempts.iteration_turns ?? 0} | ${cell(entry.evaluation?.outcome ?? "not-evaluated")} | ${cell(entry.evaluation?.ratings.research_quality ?? "-")} | ${cell(entry.repo_root)} | ${cell(entry.objective)} |`).join("\n")}
+| Created | Run | Pattern | Variant | Status | Stop reason | C/I/R/Research/Iterate/Verify | Codex home/auth | Evaluation | Research rating | Repository | Objective |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | ---: | --- | --- |
+${entries.map((entry) => `| ${cell(entry.created_at)} | ${cell(entry.run_id)} | ${cell(entry.delegation_pattern)} | ${cell(entry.experiment_variant ?? "-")} | ${cell(entry.salvaged ? `${entry.status} (salvaged)` : entry.status)} | ${cell(entry.autonomous_stop_reason ?? "-")} | ${entry.attempts.compile ?? 0}/${entry.attempts.implement ?? 0}/${entry.attempts.resume ?? 0}/${entry.attempts.research_turns ?? 0}/${entry.attempts.iteration_turns ?? 0}/${entry.attempts.verification_calls ?? 0} | ${cell(entry.codex_environment ? `${entry.codex_environment.mode}/${entry.codex_environment.auth_store}` : "shared/auto")} | ${cell(entry.evaluation?.outcome ?? "not-evaluated")} | ${cell(entry.evaluation?.ratings.research_quality ?? "-")} | ${cell(entry.repo_root)} | ${cell(entry.objective)} |`).join("\n")}
 `);
+}
+
+function headlessBackend(args: string[]): HeadlessBackend {
+  const configured = option(args, "--backend") ?? process.env.AGENT_DELEGATOR_EXECUTION_BACKEND ?? "process";
+  if (configured === "auto") return process.env.HERDR_ENV === "1" && process.env.HERDR_WORKSPACE_ID ? "herdr" : "process";
+  if (configured !== "process" && configured !== "herdr") {
+    throw new Error("--backend must be process, herdr, or auto");
+  }
+  return configured;
+}
+
+function workerArguments(args: string[]): string[] {
+  const filtered: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]!;
+    if (argument === "--detach") continue;
+    if (argument === "--backend") {
+      index += 1;
+      continue;
+    }
+    if (argument.startsWith("--backend=")) continue;
+    filtered.push(argument);
+  }
+  return filtered;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\"'\"'`)}'`;
+}
+
+async function runHerdr(args: string[]): Promise<string> {
+  const child = Bun.spawn(["herdr", ...args], { stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
+  ]);
+  if (exitCode !== 0) throw new Error(`herdr ${args.slice(0, 2).join(" ")} failed: ${stderr.trim() || stdout.trim()}`);
+  return stdout;
+}
+
+async function launchProcessJob(jobPath: string, job: HeadlessJob, command: string, args: string[]): Promise<void> {
+  const entry = process.argv[1];
+  if (!entry) throw new Error("Cannot determine the agent-delegator entry point for a detached worker");
+  const stdout = openSync(job.stdout_path, "a", 0o600);
+  const stderr = openSync(job.stderr_path, "a", 0o600);
+  try {
+    const child = spawnProcess(process.execPath, [entry, command, ...args], {
+      cwd: job.repo_root,
+      detached: true,
+      stdio: ["ignore", stdout, stderr],
+      env: { ...process.env, AGENT_DELEGATOR_HEADLESS_JOB_PATH: jobPath },
+    });
+    job.controller_pid = child.pid ?? null;
+    job.status = "running";
+    await writeHeadlessJob(jobPath, job);
+    child.unref();
+  } finally {
+    closeSync(stdout);
+    closeSync(stderr);
+  }
+}
+
+async function launchHerdrJob(jobPath: string, job: HeadlessJob, command: string, args: string[]): Promise<void> {
+  const workspaceId = process.env.HERDR_WORKSPACE_ID;
+  if (!workspaceId) throw new Error("The herdr backend requires launch from a Herdr pane with HERDR_WORKSPACE_ID");
+  const entry = process.argv[1];
+  if (!entry) throw new Error("Cannot determine the agent-delegator entry point for a Herdr worker");
+  const scriptPath = join(headlessJobDirectory(job.id), "launch.sh");
+  const invocation = [process.execPath, entry, command, ...args].map(shellQuote).join(" ");
+  await writeText(
+    scriptPath,
+    `#!/bin/sh\nexec env AGENT_DELEGATOR_HEADLESS_JOB_PATH=${shellQuote(jobPath)} ${invocation} >>${shellQuote(job.stdout_path)} 2>>${shellQuote(job.stderr_path)}\n`,
+  );
+  await chmod(scriptPath, 0o700);
+  const created = JSON.parse(await runHerdr([
+    "tab", "create", "--workspace", workspaceId, "--cwd", job.repo_root,
+    "--label", `agent-delegator ${job.command} ${job.run_id}`, "--no-focus",
+  ])) as { result?: { tab?: { tab_id?: string }; root_pane?: { pane_id?: string } } };
+  const tabId = created.result?.tab?.tab_id;
+  const paneId = created.result?.root_pane?.pane_id;
+  if (!tabId || !paneId) throw new Error("Herdr did not return a tab and root pane for the detached job");
+  job.herdr_workspace_id = workspaceId;
+  job.herdr_tab_id = tabId;
+  job.herdr_pane_id = paneId;
+  job.status = "running";
+  await writeHeadlessJob(jobPath, job);
+  try {
+    await runHerdr(["pane", "run", paneId, shellQuote(scriptPath)]);
+  } catch (error) {
+    await runHerdr(["tab", "close", tabId]).catch(() => {});
+    throw error;
+  }
+}
+
+async function commandDetach(command: string, args: string[]): Promise<void> {
+  const supported = new Set(["compile", "implement", "resume", "research", "follow-up", "loop", "verify"]);
+  if (!supported.has(command)) throw new Error(`--detach is not supported for ${command}`);
+  if (!option(args, "--run")) {
+    throw new Error(`${command} --detach requires an existing --run; collect or prepare the run in the foreground first`);
+  }
+  const cwd = resolve(option(args, "--cwd") ?? process.cwd());
+  const runDir = await resolveRun(args, cwd);
+  const state = await readRunState(runDir);
+  const backend = headlessBackend(args);
+  const id = makeHeadlessJobId();
+  const directory = headlessJobDirectory(id);
+  const path = headlessJobPath(id);
+  const now = new Date().toISOString();
+  const job: HeadlessJob = {
+    schema_version: "1", id, backend, status: "launching", command, run_id: state.runId,
+    run_dir: runDir, repo_root: state.repoRoot, controller_pid: null,
+    herdr_workspace_id: null, herdr_tab_id: null, herdr_pane_id: null,
+    created_at: now, updated_at: now, completed_at: null, exit_code: null, error: null,
+    stdout_path: join(directory, "stdout.log"), stderr_path: join(directory, "stderr.log"),
+  };
+  await writeHeadlessJob(path, job);
+  await appendRunEvent(runDir, {
+    stage: "status", event: "started", attempt: null, duration_ms: null, model: null,
+    run_status: state.status, failure_category: null,
+    message: `Launching ${command} as detached job ${id} with ${backend}`,
+    usage: null, metrics: { execution_backend: backend, headless_job_id: id }, artifacts: [],
+  });
+  try {
+    const childArgs = workerArguments(args);
+    if (backend === "herdr") await launchHerdrJob(path, job, command, childArgs);
+    else await launchProcessJob(path, job, command, childArgs);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await finishHeadlessJob(path, "failed", 1, message);
+    await appendRunEvent(runDir, {
+      stage: "status", event: "failed", attempt: null, duration_ms: null, model: null,
+      run_status: state.status, failure_category: "configuration", message, usage: null,
+      metrics: { execution_backend: backend, headless_job_id: id }, artifacts: [],
+    });
+    throw error;
+  }
+  print({
+    job_id: id, backend, status: "running", run_id: state.runId, run_dir: runDir,
+    stdout: job.stdout_path, stderr: job.stderr_path,
+    controller_pid: job.controller_pid, herdr_tab_id: job.herdr_tab_id, herdr_pane_id: job.herdr_pane_id,
+  });
+}
+
+async function commandJobs(args: string[]): Promise<void> {
+  const id = option(args, "--id");
+  let jobs = await listHeadlessJobs();
+  if (id) jobs = jobs.filter((job) => job.id === id);
+  for (const job of jobs) {
+    if (job.status !== "running" || job.backend !== "process" || !job.controller_pid || processIsAlive(job.controller_pid)) {
+      continue;
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+    const current = await readHeadlessJob(headlessJobPath(job.id));
+    if (current.status === "running" && current.controller_pid && !processIsAlive(current.controller_pid)) {
+      current.status = "lost";
+      current.error = "The detached controller exited without recording completion; inspect logs and run status.";
+      current.completed_at = new Date().toISOString();
+      await writeHeadlessJob(headlessJobPath(job.id), current);
+    }
+  }
+  jobs = await listHeadlessJobs();
+  if (id) jobs = jobs.filter((job) => job.id === id);
+  if (flag(args, "--active")) jobs = jobs.filter((job) => job.status === "launching" || job.status === "running");
+  print({ headless_dir: headlessRoot(), jobs });
 }
 
 async function commandDoctor(args: string[]): Promise<void> {
   const cwd = resolve(option(args, "--cwd") ?? process.cwd());
-  const codex = await probeCodex(codexCommand(), cwd);
+  const codexEnvironment = selectCodexEnvironment("doctor", option(args, "--codex-home"), option(args, "--codex-auth-store"));
+  await prepareCodexEnvironment(codexEnvironment);
+  const command = codexCommand();
+  const environment = codexProcessEnvironment(codexEnvironment);
+  const codex = await probeCodex(command, cwd, environment);
+  const codexAuthentication = await probeCodexAuthentication(
+    command, cwd, environment, codexConfigArgs(codexEnvironment),
+  );
   const repoRoot = await repositoryRoot(cwd).catch(() => null);
   const value = {
     schema_version: "1",
@@ -2491,11 +2899,15 @@ async function commandDoctor(args: string[]): Promise<void> {
     repo_root: repoRoot,
     registry_path: registryPath(),
     history_path: historyPath(),
+    codex_environment: codexEnvironment,
+    codex_authentication: codexAuthentication,
   };
   if (flag(args, "--json")) print(value);
   else process.stdout.write(
     `agent-delegator ${value.agent_delegator_version}\nBun ${value.bun_version}\n${codex.version}\n` +
-    `Repository: ${repoRoot ?? "not detected"}\nRegistry: ${value.registry_path}\nHistory: ${value.history_path}\n`,
+    `Repository: ${repoRoot ?? "not detected"}\nRegistry: ${value.registry_path}\nHistory: ${value.history_path}\n` +
+    `Codex home: ${codexEnvironment.home ?? "shared"} (${codexEnvironment.authStore} auth store)\n` +
+    `Codex authentication: ${codexAuthentication.status}\n`,
   );
 }
 
@@ -2511,6 +2923,8 @@ function usage(): string {
   agent-delegator research (--run <id> --retry | --context <path> | --objective <text>) [--model <model>]
   agent-delegator follow-up --run <id-or-path> --message <text> [--retry]
   agent-delegator loop --run <id-or-path> [--max-turns <n>] [--max-minutes <n>] [--retry]
+  agent-delegator verify --run <id-or-path> [--model <model>]
+  agent-delegator jobs [--active] [--id <job-id>]
   agent-delegator status --run <id-or-path> [--observation] [--force-fail] [--force-unlock]
   agent-delegator wait --run <id-or-path> [--timeout-seconds <n>]
   agent-delegator evaluate --run <id-or-path> --evaluation <path>
@@ -2546,9 +2960,13 @@ Common options:
   --max-source-bytes <n>    Raise the per-source snapshot limit on the quick path
   --max-transcript-input-bytes <n>  Raise the raw transcript input cap on the quick path
   --no-redact               Disable credential redaction for the whole run
+  --codex-home <selection>  Use shared, isolated, or an absolute Codex home for the run
+  --codex-auth-store <kind> Use auto, keyring, file, or explicit shared-file credentials
   --dry-run                 Collect and prepare without calling Codex
   --force-fail              Convert a stuck active run to failed after manual verification
   --force-unlock            Remove this run's verified-orphaned repository worktree lock
+  --detach                  Run an existing-run operation under a durable background controller
+  --backend <kind>          Detached backend: process, herdr, or auto (default process)
 `;
 }
 
@@ -2563,6 +2981,11 @@ async function main(): Promise<void> {
     return;
   }
   if (command) validateArguments(command, args);
+  if (command && flag(args, "--detach")) {
+    await commandDetach(command, args);
+    return;
+  }
+  if (option(args, "--backend")) throw new Error("--backend requires --detach");
   switch (command) {
     case "resolve-transcript":
       await commandResolveTranscript(args);
@@ -2599,6 +3022,10 @@ async function main(): Promise<void> {
       await withExistingRunLock(command, args, () =>
         withRepositoryLock(command, args, () => commandLoop(args)));
       break;
+    case "verify":
+      await withExistingRunLock(command, args, () =>
+        withRepositoryLock(command, args, () => commandVerify(args)));
+      break;
     case "wait":
       await commandWait(args);
       break;
@@ -2616,6 +3043,9 @@ async function main(): Promise<void> {
     case "history":
       await commandHistory(args);
       break;
+    case "jobs":
+      await commandJobs(args);
+      break;
     case "doctor":
       await commandDoctor(args);
       break;
@@ -2630,8 +3060,20 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`agent-delegator: ${message}\n`);
-  process.exitCode = 1;
-});
+async function start(): Promise<void> {
+  const jobPath = process.env.AGENT_DELEGATOR_HEADLESS_JOB_PATH;
+  if (jobPath) await waitForHeadlessLaunch(jobPath);
+  try {
+    await main();
+    if (jobPath) await finishHeadlessJob(
+      jobPath, "completed", typeof process.exitCode === "number" ? process.exitCode : 0, null,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (jobPath) await finishHeadlessJob(jobPath, "failed", 1, message).catch(() => {});
+    process.stderr.write(`agent-delegator: ${message}\n`);
+    process.exitCode = 1;
+  }
+}
+
+void start();

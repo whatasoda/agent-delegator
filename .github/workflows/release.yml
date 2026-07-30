@@ -26,6 +26,7 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: bun install --frozen-lockfile
+      - run: bun scripts/check-plugin.ts
       - run: bun run typecheck
       - run: bun run test
       - run: bun run build

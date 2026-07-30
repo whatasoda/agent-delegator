@@ -12,7 +12,7 @@ import { appendLine, appendText, readJson, sha256File, writeJson, writeText, wri
 import { worktreeObservation } from "./repository.js";
 import { observedRunModels, readRunState, type RunState, type RunStatus } from "./run-store.js";
 
-export type ObservationStage = "collect" | "compile" | "approve" | "implement" | "resume" | "research" | "follow-up" | "iterate" | "evaluate" | "status";
+export type ObservationStage = "collect" | "compile" | "approve" | "implement" | "resume" | "research" | "follow-up" | "iterate" | "verify" | "evaluate" | "status";
 export type FailureCategory = "configuration" | "collection" | "validation" | "integrity" | "repository-drift" | "codex-spawn" | "codex-timeout" | "codex-exit" | "interrupted" | "unknown";
 
 export interface RunEvent {
@@ -41,6 +41,8 @@ export interface RunEvent {
     codex_invoked?: boolean;
     exit_code?: number;
     worktree_changed?: boolean;
+    execution_backend?: "process" | "herdr";
+    headless_job_id?: string;
   };
   artifacts: string[];
 }
@@ -193,7 +195,7 @@ export async function readRunEvents(runDir: string): Promise<RunEvent[]> {
 
 export function attemptDirectory(
   runDir: string,
-  stage: "compile" | "implement" | "resume" | "research" | "follow-up" | "iterate",
+  stage: "compile" | "implement" | "resume" | "research" | "follow-up" | "iterate" | "verify",
   attempt: number,
 ): string {
   return join(runDir, "attempts", stage, String(attempt).padStart(3, "0"));
@@ -305,16 +307,19 @@ export interface RunObservationSummary {
   delegation_pattern: "implementation" | "research" | "interactive" | "autonomous";
   experiment_variant: string | null;
   autonomous_stop_reason: string | null;
+  verification_status: "passed" | "failed" | "partial" | "not-run" | null;
+  codex_environment: { mode: string; auth_store: string };
+  detached_execution: { jobs: number; backends: string[]; job_ids: string[] };
   metadata: TaskMetadata;
   created_at: string;
   updated_at: string;
   sources: { count: number; bytes: number; excluded: number };
-  attempts: { collect: number; compile: number; implement: number; resume: number; iterate: number };
+  attempts: { collect: number; compile: number; implement: number; resume: number; iterate: number; verify?: number };
   duration_ms: Record<string, number>;
   usage: CodexUsage;
   usage_observed_calls: number;
   codex_calls: number;
-  models: { compiler: string | null; implementation: string | null; research: string | null };
+  models: { compiler: string | null; implementation: string | null; research: string | null; verification?: string | null };
   tool: { version: string; revision: string | null; dirty: boolean | null; artifact_sha256: string | null };
   failures: Record<string, number>;
   needs_decision_count: number;
@@ -332,6 +337,7 @@ export interface RunObservationSummary {
       evidence_md: number | null;
       result_json: number | null;
       research_json?: number;
+      verification_json?: number;
     };
   };
   evaluation: EvaluationRecord | null;
@@ -384,6 +390,16 @@ export async function buildRunObservation(runDir: string): Promise<RunObservatio
     delegation_pattern: state.delegationPattern ?? "implementation",
     experiment_variant: state.experimentVariant ?? null,
     autonomous_stop_reason: state.autonomousStopReason ?? null,
+    verification_status: state.verificationStatus ?? null,
+    codex_environment: {
+      mode: state.codexHomeMode ?? "shared",
+      auth_store: state.codexAuthStore ?? "auto",
+    },
+    detached_execution: {
+      jobs: new Set(events.flatMap((event) => event.metrics.headless_job_id ? [event.metrics.headless_job_id] : [])).size,
+      backends: [...new Set(events.flatMap((event) => event.metrics.execution_backend ? [event.metrics.execution_backend] : []))],
+      job_ids: [...new Set(events.flatMap((event) => event.metrics.headless_job_id ? [event.metrics.headless_job_id] : []))],
+    },
     metadata: state.taskMetadata ?? { task_type: "other", complexity: "unknown", tags: [] },
     created_at: state.createdAt,
     updated_at: state.updatedAt,
@@ -395,6 +411,7 @@ export async function buildRunObservation(runDir: string): Promise<RunObservatio
     attempts: {
       ...(state.attempts ?? { collect: 0, compile: 0, implement: 0, resume: 0 }),
       iterate: state.iterationCount ?? 0,
+      ...((state.verificationCount ?? 0) > 0 ? { verify: state.verificationCount } : {}),
     },
     duration_ms: duration,
     usage,
@@ -439,6 +456,9 @@ export async function buildRunObservation(runDir: string): Promise<RunObservatio
         evidence_md: await fileSize(join(runDir, "evidence.md")),
         result_json: await fileSize(join(runDir, "result.json")),
         ...(researchResultBytes === null ? {} : { research_json: researchResultBytes }),
+        ...((state.verificationCount ?? 0) > 0
+          ? { verification_json: await fileSize(join(runDir, "verification.json")) ?? 0 }
+          : {}),
       },
     },
     evaluation,
@@ -497,6 +517,11 @@ export interface ObservationReport {
     compiler_model: Record<string, number>;
     implementation_model: Record<string, number>;
     research_model: Record<string, number>;
+    verification_model: Record<string, number>;
+    verification_status: Record<string, number>;
+    codex_home_mode: Record<string, number>;
+    codex_auth_store: Record<string, number>;
+    execution_backend: Record<string, number>;
     delegation_pattern: Record<string, number>;
     experiment_variant: Record<string, number>;
     autonomous_stop_reason: Record<string, number>;
@@ -590,7 +615,8 @@ function buildCohorts(
         (run.controller_cost.review_surface_bytes.brief_md ?? 0) +
         (run.controller_cost.review_surface_bytes.evidence_md ?? 0) +
         (run.controller_cost.review_surface_bytes.result_json ?? 0) +
-        (run.controller_cost.review_surface_bytes.research_json ?? 0), 0),
+        (run.controller_cost.review_surface_bytes.research_json ?? 0) +
+        (run.controller_cost.review_surface_bytes.verification_json ?? 0), 0),
       average_ratings: {
         requirements_fidelity: averageRating(evaluated, "requirements_fidelity"),
         implementation_quality: averageRating(evaluated, "implementation_quality"),
@@ -633,7 +659,9 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
   const breakdowns: ObservationReport["breakdowns"] = {
     task_type: {}, complexity: {}, final_status: {}, evaluation_outcome: {}, brief_quality: {},
     implementation_quality: {}, communication_quality: {}, failure_category: {}, compiler_model: {},
-    implementation_model: {}, research_model: {}, delegation_pattern: {}, experiment_variant: {},
+    implementation_model: {}, research_model: {}, verification_model: {}, verification_status: {},
+    codex_home_mode: {}, codex_auth_store: {}, execution_backend: {},
+    delegation_pattern: {}, experiment_variant: {},
     autonomous_stop_reason: {}, delegator_revision: {},
   };
   for (const run of runs) {
@@ -643,6 +671,11 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
     increment(breakdowns.compiler_model, run.models.compiler);
     increment(breakdowns.implementation_model, run.models.implementation);
     increment(breakdowns.research_model, run.models.research);
+    if (run.models.verification !== undefined) increment(breakdowns.verification_model, run.models.verification);
+    if (run.attempts.verify !== undefined) increment(breakdowns.verification_status, run.verification_status);
+    increment(breakdowns.codex_home_mode, run.codex_environment.mode);
+    increment(breakdowns.codex_auth_store, run.codex_environment.auth_store);
+    for (const backend of run.detached_execution.backends) increment(breakdowns.execution_backend, backend);
     increment(breakdowns.delegation_pattern, run.delegation_pattern);
     increment(breakdowns.experiment_variant, run.experiment_variant);
     if (run.autonomous_stop_reason) increment(breakdowns.autonomous_stop_reason, run.autonomous_stop_reason);
@@ -662,7 +695,7 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
   }
   const codexCalls = runs.reduce((sum, run) => sum + run.codex_calls, 0);
   const usageObservedCalls = runs.reduce((sum, run) => sum + run.usage_observed_calls, 0);
-  const stages = ["collect", "compile", "approve", "implement", "resume", "research", "follow-up", "iterate", "evaluate"];
+  const stages = ["collect", "compile", "approve", "implement", "resume", "research", "follow-up", "iterate", "verify", "evaluate"];
   const stageDuration = Object.fromEntries(stages.map((stage) => [
     stage,
     mean(runs.map((run) => run.duration_ms[stage]).filter((value): value is number => value !== undefined)),
@@ -697,7 +730,8 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
         (run.controller_cost.review_surface_bytes.brief_md ?? 0) +
         (run.controller_cost.review_surface_bytes.evidence_md ?? 0) +
         (run.controller_cost.review_surface_bytes.result_json ?? 0) +
-        (run.controller_cost.review_surface_bytes.research_json ?? 0), 0),
+        (run.controller_cost.review_surface_bytes.research_json ?? 0) +
+        (run.controller_cost.review_surface_bytes.verification_json ?? 0), 0),
     },
     averages: {
       source_count: mean(runs.map((run) => run.sources.count)),
@@ -757,7 +791,7 @@ export function renderObservationReport(report: ObservationReport): string {
 - Token telemetry coverage: ${report.summary.usage_observed_calls} / ${report.summary.codex_calls} Codex calls${report.summary.token_observation_percent === null ? "" : ` (${report.summary.token_observation_percent}%)`}
 - Input / cached input / output tokens observed: ${report.summary.input_tokens} / ${report.summary.cached_input_tokens} / ${report.summary.output_tokens}
 - Controller interactions tracked: ${report.summary.tracked_invocations} (gate rejections: ${report.summary.gate_rejections}, failed Codex calls: ${report.summary.codex_failed_calls})
-- Review surface bytes (brief.md + evidence.md + result.json/research.json): ${report.summary.review_surface_bytes}
+- Review surface bytes (brief/evidence/result/research/verification): ${report.summary.review_surface_bytes}
 - Average ratings (requirements / implementation / communication / research): ${report.averages.ratings.requirements_fidelity ?? "n/a"} / ${report.averages.ratings.implementation_quality ?? "n/a"} / ${report.averages.ratings.communication_efficiency ?? "n/a"} / ${report.averages.ratings.research_quality ?? "n/a"}
 
 ## Average stage duration
@@ -783,6 +817,28 @@ ${breakdownRows(report.breakdowns.delegation_pattern)}
 | Reason | Runs |
 | --- | ---: |
 ${breakdownRows(report.breakdowns.autonomous_stop_reason)}
+
+## Verification outcomes
+
+| Status | Runs |
+| --- | ---: |
+${breakdownRows(report.breakdowns.verification_status)}
+
+## Detached execution backends
+
+| Backend | Runs |
+| --- | ---: |
+${breakdownRows(report.breakdowns.execution_backend)}
+
+## Codex state isolation
+
+| Home mode | Runs |
+| --- | ---: |
+${breakdownRows(report.breakdowns.codex_home_mode)}
+
+| Auth store | Runs |
+| --- | ---: |
+${breakdownRows(report.breakdowns.codex_auth_store)}
 
 ## Pattern comparison
 
@@ -810,9 +866,9 @@ ${breakdownRows(report.breakdowns.failure_category)}
 
 ## Runs
 
-| Run | Pattern | Variant | Type | Complexity | Status | Brief edits | Gate rejections | Outcome |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-${report.runs.map((run) => `| ${markdownCell(run.run_id)} | ${markdownCell(run.delegation_pattern)} | ${markdownCell(run.experiment_variant ?? "-")} | ${markdownCell(run.metadata.task_type)} | ${markdownCell(run.metadata.complexity)} | ${markdownCell(run.salvaged_after_failure ? `${run.status} (salvaged)` : run.status)} | ${run.brief_json_difference_count ?? "n/a"} | ${run.controller_cost.gate_rejections} | ${markdownCell(run.evaluation?.outcome ?? "not-evaluated")} |`).join("\n")}
+| Run | Pattern | Variant | Type | Complexity | Status | Verify | Detached | Codex state | Brief edits | Gate rejections | Outcome |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+${report.runs.map((run) => `| ${markdownCell(run.run_id)} | ${markdownCell(run.delegation_pattern)} | ${markdownCell(run.experiment_variant ?? "-")} | ${markdownCell(run.metadata.task_type)} | ${markdownCell(run.metadata.complexity)} | ${markdownCell(run.salvaged_after_failure ? `${run.status} (salvaged)` : run.status)} | ${markdownCell(run.verification_status ?? "-")} | ${markdownCell(run.detached_execution.backends.join(",") || "-")} | ${markdownCell(`${run.codex_environment.mode}/${run.codex_environment.auth_store}`)} | ${run.brief_json_difference_count ?? "n/a"} | ${run.controller_cost.gate_rejections} | ${markdownCell(run.evaluation?.outcome ?? "not-evaluated")} |`).join("\n")}
 
 ${directoriesSection(report)}${report.invalid_runs.length ? `## Invalid runs\n\n${report.invalid_runs.map((item) => `- ${item.run_dir}: ${item.error}`).join("\n")}\n` : ""}`;
 }

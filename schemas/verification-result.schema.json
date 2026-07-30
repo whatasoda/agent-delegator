@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "summary", "policy_sources", "checks", "remaining_risks"],
+  "properties": {
+    "status": { "type": "string", "enum": ["passed", "failed", "partial", "not-run"] },
+    "summary": { "type": "string", "minLength": 1 },
+    "policy_sources": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "status", "details", "basis"],
+        "properties": {
+          "command": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "enum": ["passed", "failed", "not-run"] },
+          "details": { "type": "string" },
+          "basis": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "remaining_risks": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+  }
+}

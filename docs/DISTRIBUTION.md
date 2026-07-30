@@ -90,8 +90,8 @@ plugins/agent-delegator/
   handoffs/cross-repository-validation.md
 ```
 
-Plugin `0.1.0` is thin: it resolves `agent-delegator` from `PATH`, requires core CLI
-`0.1.0-alpha.2`, runs `doctor`, and gives one exact installation instruction when versions differ.
+Plugin `0.2.0` is thin: it resolves `agent-delegator` from `PATH`, requires core CLI
+`0.1.0-alpha.3`, runs `doctor`, and gives one exact installation instruction when versions differ.
 It does not reach outside the installed plugin cache for a development checkout. Target-specific
 profiles remain in target repositories.
 

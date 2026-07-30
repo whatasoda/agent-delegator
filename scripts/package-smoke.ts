@@ -43,10 +43,12 @@ try {
     "package/prompts/implement.md",
     "package/prompts/iterate.md",
     "package/prompts/research.md",
+    "package/prompts/verify.md",
     "package/schemas/brief.schema.json",
     "package/schemas/research-result.schema.json",
     "package/schemas/iteration-result.schema.json",
     "package/schemas/result.schema.json",
+    "package/schemas/verification-result.schema.json",
     "package/README.md",
     "package/LICENSE",
   ]) {
@@ -178,6 +180,34 @@ process.stdout.write(JSON.stringify({
     /^[a-f0-9]{64}$/.test(metadata.tool.artifact_sha256),
     "Installed package did not record its bundle SHA-256",
   );
+  await run(
+    [
+      installedCli, "collect", "--objective=Verify packaged detached execution", "--transcript", transcript,
+      "--runs-dir", runs, "--run-id", "package-headless-smoke",
+    ],
+    fixture,
+    smokeEnv,
+  );
+  const launched = await run(
+    [
+      installedCli, "compile", "--run", "package-headless-smoke", "--runs-dir", runs,
+      "--dry-run", "--detach", "--backend", "process",
+    ],
+    fixture,
+    { ...smokeEnv, AGENT_DELEGATOR_HEADLESS_DIR: join(temporaryRoot, "headless") },
+  );
+  const jobId = JSON.parse(launched.stdout).job_id;
+  let jobStatus = "running";
+  for (let attempt = 0; attempt < 100 && jobStatus === "running"; attempt += 1) {
+    const jobs = await run(
+      [installedCli, "jobs", "--id", jobId],
+      fixture,
+      { ...smokeEnv, AGENT_DELEGATOR_HEADLESS_DIR: join(temporaryRoot, "headless") },
+    );
+    jobStatus = JSON.parse(jobs.stdout).jobs[0]?.status ?? "missing";
+    if (jobStatus === "running") await Bun.sleep(20);
+  }
+  assert(jobStatus === "completed", `Installed detached controller ended as ${jobStatus}`);
   process.stdout.write("package smoke passed\n");
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });

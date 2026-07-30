@@ -39,10 +39,14 @@ describe("delegation prompts", () => {
       .replace(/\s+/g, " ");
     const iterator = (await readFile(resolve(import.meta.dir, "../prompts/iterate.md"), "utf8"))
       .replace(/\s+/g, " ");
+    const verifier = (await readFile(resolve(import.meta.dir, "../prompts/verify.md"), "utf8"))
+      .replace(/\s+/g, " ");
 
     expect(compiler).toContain("runnable in a workspace-write sandbox without credentials or network access");
     expect(implementer).toContain("Record an unavailable owner-only check as `not-run`");
     expect(implementer).toContain("do not return `blocked` solely because");
     expect(iterator).toContain("network-dependent checks as `not-run`");
+    expect(verifier).toContain("read the repository's durable instructions");
+    expect(verifier).toContain("do not guess a generic package-manager command");
   });
 });

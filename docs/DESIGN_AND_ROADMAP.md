@@ -247,6 +247,40 @@ pattern/variant report と machine history で比較できるようにする。
 収束と limit 到達を後日区別できるよう、各 invocation の stop reason と limit は append-only の
 `loop-history.jsonl` に残し、最新値を state、`loop.json`、machine history、report に投影する。
 
+### 4.15 smoke verification は実装から独立させ、repository policy に従わせる
+
+実装者自身の verification だけでは、コマンド選択の見落としと自己評価の混同が残る。完成済みrunへ
+`verify` を追加し、新しいCodex sessionが Brief、AGENTS.md、CLAUDE.md、package scripts、test設定を
+読んで最小のsmoke setを選ぶ。各checkはcommand、status、detailsに加えて選択根拠を必須にする。
+
+検証はtest runnerがignored outputを生成できるworkspace-write sandboxで行うが、観測対象worktreeの
+driftは失敗にする。検証のCodex/schema/command失敗は完成済み実装の lifecycle を `failed` へ戻さず、
+verification固有のfailureとして記録する。これにより実装品質と検証運用の失敗を別々に評価できる。
+
+### 4.16 headless は既存operationを監督する起動backendにする
+
+親Claudeの終了耐性のためにapprovalやlockを迂回する別実装経路は作らない。`--detach` は同じCLI
+operationを独立controllerまたはHerdr tabで起動し、既存のrun lock、repository lock、state遷移、
+checkpoint、中断回復をそのまま使う。machine-private job recordはbackend、run、PID/pane、stdout、
+stderr、終了状態だけを保持し、Evidenceやprompt本文を複製しない。
+
+foregroundを後方互換の既定とし、比較的終わりが見える処理は親にぶら下げる。`process` は端末非依存、
+`herdr` はユーザーがterminal sessionを残す運用を選んだ場合、`auto` はHerdr内だけHerdrを選ぶ。
+cmuxはこの検証環境に無いため、未検証adapterを推測実装せず共通job modelへの将来adapterとする。
+
+### 4.17 Codex local state と認証storeを別の選択軸にする
+
+既定は従来どおり共有Codex homeである。run単位の `isolated` または絶対pathの `custom` homeは、Codex
+設定、ログ、session rollout、履歴をagent-delegatorのprivate領域へ分離する。認証fileの自動copyや
+symlinkはcredential境界を曖昧にするため行わない。代わりにCodex公式の `keyring` storeをisolatedの
+既定とし、`auto` / `file` も明示選択可能にする。既存loginがfile storeだけにあるhost向けには、
+明示的な `shared-file` がisolated homeの `auth.json` だけを共有元へsymlinkする。暗黙には選ばず、既存
+targetを置換しない。
+
+Codex homeはsession探索とresumeに関わるため、最初のCodex call後はrun内で固定する。履歴を一切残さない
+ephemeral modeはresume、follow-up、loopと相容れないため、このsession-oriented protocolのhome分離とは
+混ぜず将来のone-shot patternとして扱う。
+
 ## 5. 現在地: Stage 1
 
 実装済み:
@@ -270,6 +304,9 @@ pattern/variant report と machine history で比較できるようにする。
 - token telemetry coverage、stage timing、failure taxonomy、task/model/outcome breakdown
 - read-only research、同一 thread follow-up、delegation pattern / experiment variant 比較
 - approved Brief に拘束された bounded same-thread implementation loop と iteration checkpoint
+- repository規約とBriefに基づく独立verification、根拠付きcheck artifact
+- opt-in detached process / Herdr controllerとmachine-level job一覧・ログ
+- shared / isolated / custom Codex homeと独立した認証store選択
 - マシン単位の最小 state history と repository 外からの一意 run ID 解決
 - fake-Codex integration tests と real Claude/Codex acceptance E2E
 
@@ -287,10 +324,10 @@ Stage 1 の意図は「自動で最適な context を探すこと」ではなく
 | Context budget | file/byte count の上限 | model/token budget に応じた selection、compression、priority allocation |
 | Project knowledge | 単一 profile | profile composition、inheritance、versioning、organization policy |
 | Evaluation | run ごとの Claude rubric、Brief/worktree 自動比較、cross-run 集計 | rubric calibration、corpus-based extraction accuracy、citation precision、長期 outcome metrics |
-| Delegation patterns | approved implementation、bounded autonomous improvement、read-only research、同一 thread follow-up | trial corpus に基づく pattern selection guidance と cost/quality trade-off |
+| Delegation patterns | approved implementation、bounded autonomous improvement、read-only research、同一 thread follow-up、独立verification | trial corpus に基づく pattern selection guidance と cost/quality trade-off |
 | Distribution | private versioned Bun package | standalone CLI、Claude plugin、adapter SDK、public release |
 | Observability | stage timing、usage 欠測率、failure taxonomy、attempt/checkpoint、比較可能な report | pricing-aware cost、trace viewer、dashboard、longitudinal alerts、外部 telemetry export |
-| Recovery | timeout、attempt、明示 retry、stale controller 検出 | resumable operation journal、host crash 後の安全な自動診断 |
+| Recovery | timeout、attempt、明示 retry、stale controller検出、opt-in headless process/Herdr | resumable operation journal、host crash 後の安全な自動診断、追加terminal adapter |
 
 ## 7. ロードマップ
 

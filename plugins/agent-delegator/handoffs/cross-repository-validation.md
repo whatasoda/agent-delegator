@@ -34,8 +34,10 @@ path and use a dedicated worktree before any workspace-write trial.
 2. Resolve and collect evidence without Codex; inspect source coverage and exclusions.
 3. Compile read-only; verify target terminology, constraints, commands, and citations in the Brief.
 4. Only in an approved disposable worktree, approve and implement one bounded change.
-5. Review the diff independently and record an evaluation for every run.
-6. Aggregate with `agent-delegator report --all --format=markdown`, keeping unknown telemetry distinct
+5. Run `agent-delegator verify --run <id>`, confirm its commands follow target policy and leave the
+   worktree unchanged, then independently review the diff and verification.
+6. Record an evaluation for every run.
+7. Aggregate with `agent-delegator report --all --format=markdown`, keeping unknown telemetry distinct
    from zero.
 
 Stop at the highest level the user authorized. A successful command is not acceptance: report policy

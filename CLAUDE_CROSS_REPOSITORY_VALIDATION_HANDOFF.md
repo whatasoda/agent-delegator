@@ -98,7 +98,7 @@ write-capable validation.
 | 1. Resolve and collect | None; artifacts stay outside target | No Codex | Test session discovery, source routing, bounds, and provenance |
 | 2. Compile and review | None | `read-only` | Test Brief extraction and project-policy preservation |
 | 3. Isolated implement/resume | Dedicated target worktree only | `workspace-write` | Test useful implementation and focused communication |
-| 4. Evaluate and aggregate | Run directory only | No new Codex call | Compare quality and operability across repositories |
+| 4. Verify, evaluate, aggregate | Test-generated ignored output only | `workspace-write` verifier, then no Codex | Test policy-aware smoke selection and compare quality |
 
 ## Shared setup
 
@@ -311,9 +311,9 @@ bun "$AGENT_DELEGATOR_CLI" implement \
   --runs-dir="$AGENT_DELEGATOR_RUNS_ROOT"
 ```
 
-Claude's foreground shell timeout is independent of the CLI's Codex timeout. If the shell cannot
-wait for the configured duration, use its supported background execution mechanism, preserve the
-controller output, and poll `status --observation` and the attempt logs. Do not let a short outer
+Claude's foreground shell timeout is independent of the CLI's Codex timeout. If the operation must
+survive the parent session, use `--detach --backend=process` and inspect `jobs --id <job-id>` plus
+`status --observation`; otherwise leave the bounded operation attached. Do not let a short outer
 timeout kill the controller and then treat the interruption as a clean implementation failure.
 Inspect the target diff and any surviving child processes before deciding whether a retry is safe.
 
@@ -331,7 +331,17 @@ Do not use `--allow-base-change` or `--allow-worktree-change` merely to bypass a
 explain the drift first. Do not automatically retry a failed workspace-write call without reviewing
 partial edits and attempt artifacts.
 
-Claude must independently run the target's relevant verification and review:
+After a completed result, exercise policy-aware delegated verification once:
+
+```sh
+bun "$AGENT_DELEGATOR_CLI" verify \
+  --run=<target-id>-portability-<date> \
+  --runs-dir="$AGENT_DELEGATOR_RUNS_ROOT"
+```
+
+Confirm `verification.json` selected target-specific commands from the target's Brief/instructions,
+recorded a basis for every check, and did not change the observed worktree. Claude must still
+independently run or review the target's relevant verification and inspect:
 
 - changed and untracked files;
 - exact diff and generated artifacts;
@@ -342,7 +352,7 @@ Claude must independently run the target's relevant verification and review:
 Do not commit the target implementation during this validation unless the user separately asks to
 integrate it after reviewing the report.
 
-## Level 4 — evaluate and aggregate
+## Level 4 — verify, evaluate, and aggregate
 
 Complete one evaluation input per run using
 [`examples/evaluation-input.json`](./examples/evaluation-input.json). Ratings must reflect Claude's
@@ -371,8 +381,8 @@ Compare at least:
 - unresolved, `needs-decision`, blocked, retry, and failure counts;
 - implementation acceptance and post-Codex Claude correction effort;
 - verification outcome and requirements/implementation/communication ratings;
-- compile/implement/resume duration and attempt counts;
-- compiler/implementer model and token telemetry coverage;
+- compile/implement/resume/verify duration and attempt counts;
+- compiler/implementer/verifier model and token telemetry coverage;
 - tool revision/dirty state and target language/build-system category.
 
 The current report can aggregate a shared runs directory, but it has no first-class `project_id`,

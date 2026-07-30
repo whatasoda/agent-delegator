@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CodexInvocationError, runCodex } from "../src/codex.js";
+import { CodexInvocationError, probeCodexAuthentication, runCodex } from "../src/codex.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -11,6 +11,12 @@ afterEach(async () => {
 });
 
 describe("runCodex", () => {
+  test("reports login status without exposing failed command diagnostics", async () => {
+    expect(await probeCodexAuthentication("/bin/sh", process.cwd(), process.env, ["-c", "printf 'Logged in'", "ignored"]))
+      .toEqual({ authenticated: true, status: "Logged in" });
+    expect(await probeCodexAuthentication("/bin/false", process.cwd(), process.env, []))
+      .toEqual({ authenticated: false, status: "not-logged-in-or-unavailable" });
+  });
   test("streams JSONL events and extracts the thread id", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "agent-delegator-codex-"));
     temporaryDirectories.push(cwd);

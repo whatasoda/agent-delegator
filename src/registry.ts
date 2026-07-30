@@ -24,7 +24,7 @@ export interface RunHistoryEntry {
   delegation_pattern: "implementation" | "research" | "interactive" | "autonomous";
   experiment_variant: string | null;
   task_metadata: { task_type: string; complexity: string; tags: string[] };
-  models: { compiler: string | null; implementation: string | null; research: string | null };
+  models: { compiler: string | null; implementation: string | null; research: string | null; verification?: string | null };
   attempts: {
     collect: number;
     compile: number;
@@ -32,10 +32,12 @@ export interface RunHistoryEntry {
     resume: number;
     research_turns: number;
     iteration_turns?: number;
+    verification_calls?: number;
   };
   failure: string | null;
   salvaged?: boolean;
   autonomous_stop_reason?: string | null;
+  codex_environment?: { mode: string; auth_store: string };
   evaluation?: {
     recorded_at: string;
     outcome: string;

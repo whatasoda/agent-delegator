@@ -6,6 +6,7 @@ import stateSchema from "../schemas/state.schema.json";
 import { readJson, writeJsonAtomic } from "./files.js";
 import { appendRunHistoryEntry, type RunHistoryEntry } from "./registry.js";
 import type { TaskMetadata } from "./evidence.js";
+import type { CodexAuthStore, CodexHomeMode } from "./codex-environment.js";
 
 export type RunStatus =
   | "collecting"
@@ -15,6 +16,7 @@ export type RunStatus =
   | "approved"
   | "implementing"
   | "researching"
+  | "verifying"
   | "completed"
   | "needs-decision"
   | "blocked"
@@ -38,8 +40,8 @@ export interface RunState {
   implementationSessionId: string | null;
   latestResult: string | null;
   failure: string | null;
-  failurePhase?: "collect" | "compile" | "implement" | "resume" | "research" | "follow-up" | "iterate" | null;
-  activeOperation?: "collect" | "compile" | "implement" | "resume" | "research" | "follow-up" | "iterate" | null;
+  failurePhase?: "collect" | "compile" | "implement" | "resume" | "research" | "follow-up" | "iterate" | "verify" | null;
+  activeOperation?: "collect" | "compile" | "implement" | "resume" | "research" | "follow-up" | "iterate" | "verify" | null;
   controllerPid?: number | null;
   attempts?: { collect: number; compile: number; implement: number; resume: number };
   approvedWorktreeSha256?: string | null;
@@ -64,12 +66,22 @@ export interface RunState {
   researchTurnCount?: number;
   iterationCount?: number;
   autonomousStopReason?: "converged" | "needs-decision" | "blocked" | "turn-limit" | "time-limit" | "checkpoint-error" | null;
+  codexHomeMode?: CodexHomeMode;
+  codexHome?: string | null;
+  codexAuthStore?: CodexAuthStore;
+  verificationModel?: string | null;
+  verificationSessionId?: string | null;
+  verificationCount?: number;
+  latestVerificationPath?: string | null;
+  verificationStatus?: "passed" | "failed" | "partial" | "not-run" | null;
+  verificationFailure?: string | null;
 }
 
 export function observedRunModels(state: RunState): {
   compiler: string | null;
   implementation: string | null;
   research: string | null;
+  verification?: string | null;
 } {
   return {
     compiler: (state.attempts?.compile ?? 0) > 0 ? state.compilerModel ?? "codex-default" : null,
@@ -78,6 +90,9 @@ export function observedRunModels(state: RunState): {
       ? state.implementationModel ?? "codex-default"
       : null,
     research: (state.researchTurnCount ?? 0) > 0 ? state.researchModel ?? "codex-default" : null,
+    ...((state.verificationCount ?? 0) > 0
+      ? { verification: state.verificationModel ?? "codex-default" }
+      : {}),
   };
 }
 
@@ -168,12 +183,17 @@ export async function writeRunState(runDir: string, state: RunState): Promise<vo
       resume: state.attempts?.resume ?? 0,
       research_turns: state.researchTurnCount ?? 0,
       iteration_turns: state.iterationCount ?? 0,
+      ...((state.verificationCount ?? 0) > 0 ? { verification_calls: state.verificationCount } : {}),
     },
     failure: state.failure,
     salvaged: state.status === "failed" && Boolean(
       evaluation && ["accepted-as-is", "accepted-with-changes"].includes(evaluation.outcome),
     ),
     autonomous_stop_reason: state.autonomousStopReason ?? null,
+    codex_environment: {
+      mode: state.codexHomeMode ?? "shared",
+      auth_store: state.codexAuthStore ?? "auto",
+    },
     evaluation,
   });
 }

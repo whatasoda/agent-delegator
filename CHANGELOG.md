@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.1.0-alpha.3] - 2026-07-30
+
 ### Added
 
 - Added the public `whatasoda-agent-delegator` Claude Code marketplace and independently versioned
@@ -9,6 +11,17 @@
   update guidance, and a cross-repository validation handoff.
 - Added CI validation that keeps the marketplace/plugin versions, verified core CLI version, and
   personal/plugin operator-skill copies in sync.
+- Added repository-policy `verify` delegation with structured command rationale, independent
+  verification state, worktree-drift detection, and reportable attempt artifacts.
+- Added opt-in detached controllers with private job records and logs, `jobs` discovery, a
+  terminal-independent process backend, and a non-focused Herdr-tab backend.
+- Added shared, per-run isolated, and caller-managed Codex homes with selectable auto, keyring,
+  file, or explicit shared-file credential storage and stable same-run session routing.
+
+### Changed
+
+- Extended run observation and the Claude operator skill with verification model/status/call data,
+  detached execution selection guidance, and Codex-state isolation guidance.
 
 ## [0.1.0-alpha.2] - 2026-07-30
 

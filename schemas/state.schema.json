@@ -13,7 +13,7 @@
     "runId": { "type": "string", "minLength": 1 },
     "status": {
       "type": "string",
-      "enum": ["collecting", "prepared", "compiling", "compiled", "approved", "implementing", "researching", "completed", "needs-decision", "blocked", "failed"]
+      "enum": ["collecting", "prepared", "compiling", "compiled", "approved", "implementing", "researching", "verifying", "completed", "needs-decision", "blocked", "failed"]
     },
     "objective": { "type": "string", "minLength": 1 },
     "repoRoot": { "type": "string", "minLength": 1 },
@@ -29,8 +29,8 @@
     "implementationSessionId": { "type": ["string", "null"] },
     "latestResult": { "type": ["string", "null"] },
     "failure": { "type": ["string", "null"] },
-    "failurePhase": { "type": ["string", "null"], "enum": ["collect", "compile", "implement", "resume", "research", "follow-up", "iterate", null] },
-    "activeOperation": { "type": ["string", "null"], "enum": ["collect", "compile", "implement", "resume", "research", "follow-up", "iterate", null] },
+    "failurePhase": { "type": ["string", "null"], "enum": ["collect", "compile", "implement", "resume", "research", "follow-up", "iterate", "verify", null] },
+    "activeOperation": { "type": ["string", "null"], "enum": ["collect", "compile", "implement", "resume", "research", "follow-up", "iterate", "verify", null] },
     "controllerPid": { "type": ["integer", "null"], "minimum": 1 },
     "attempts": {
       "type": "object",
@@ -84,6 +84,15 @@
     "autonomousStopReason": {
       "type": ["string", "null"],
       "enum": ["converged", "needs-decision", "blocked", "turn-limit", "time-limit", "checkpoint-error", null]
-    }
+    },
+    "codexHomeMode": { "type": "string", "enum": ["shared", "isolated", "custom"] },
+    "codexHome": { "type": ["string", "null"] },
+    "codexAuthStore": { "type": "string", "enum": ["auto", "keyring", "file", "shared-file"] },
+    "verificationModel": { "type": ["string", "null"] },
+    "verificationSessionId": { "type": ["string", "null"] },
+    "verificationCount": { "type": "integer", "minimum": 0 },
+    "latestVerificationPath": { "type": ["string", "null"] },
+    "verificationStatus": { "type": ["string", "null"], "enum": ["passed", "failed", "partial", "not-run", null] },
+    "verificationFailure": { "type": ["string", "null"] }
   }
 }

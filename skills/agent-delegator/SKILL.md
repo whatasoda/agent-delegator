@@ -1,7 +1,7 @@
 ---
 name: agent-delegator
 description: >-
-  Delegate bounded implementation, autonomous improvement, or read-only repository research from the current Claude session
+  Delegate bounded implementation, autonomous improvement, repository-policy verification, or read-only repository research from the current Claude session
   to Codex via the agent-delegator CLI. Use when the user says "Codex に委譲", "Codex に調査を任せる",
   "agent-delegator で", or asks to trial an interactive Claude-to-Codex workflow. Requires the
   agent-delegator CLI and the Codex CLI.
@@ -22,10 +22,11 @@ description: >-
 
 ## 前提チェック
 
-`agent-delegator --version` が `0.1.0-alpha.2` を返すことを確認してから
+`agent-delegator --version` が `0.1.0-alpha.3` を返すことを確認してから
 `agent-delegator doctor --json` を実行する。CLI が無い、または別バージョンなら
-`bun add --global @whatasoda/agent-delegator@0.1.0-alpha.2`（Bun >= 1.3.0 必須）で、この
+`bun add --global @whatasoda/agent-delegator@0.1.0-alpha.3`（Bun >= 1.3.0 必須）で、この
 operator が検証済みの CLI に揃える。`doctor` が失敗した状態で委譲を開始しない。
+`doctor` の `codex_authentication.authenticated` も確認し、falseなら選択したhome/storeでloginを整える。
 
 ## パターン選択
 
@@ -35,6 +36,9 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
   `interactive` として観測される。
 - 大きめの refactor など、Claude 側で goal / MUST / scope / acceptance を決めた後に同一 thread で
   複数回の自己レビューと改善を任せる場合は `loop` を使う。Brief review と approval は標準手順と同じ。
+- 完成済み実装の smoke / verification を対象 repository の規約に沿って選ばせる場合は `verify` を使う。
+- 親セッション終了後も継続すべき長時間処理だけ `--detach` を使う。比較的終わりが見える処理は前景の
+  まま親にぶら下げる。`process` は端末非依存、`herdr` は専用タブを残したい場合に選ぶ。
 - 比較 trial では `--variant=<label>` を付ける。後から `report` の pattern/variant 内訳と
   `history --pattern/--variant` で追える。
 
@@ -51,8 +55,7 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
 ターゲットリポジトリの root で実行する。transcript は現セッションのプロセスツリーから自動解決
 されるため、文脈の貼り付けや要約は不要。
 
-1. **compile**（Codex read-only。数分かかるため必ず shell の background 実行で完了通知を待つ。
-   ポーリングしない）:
+1. **compile**（Codex read-only）:
    `agent-delegator compile --objective="<実装内容>" --task-type=<type> --complexity=<size> --tags=<a,b>`
    長大セッションで上限に当たったら `--max-transcript-input-bytes` / `--max-source-bytes`。
 2. **Brief レビュー**（Claude の責務）: run dir の `brief.md` を読み、MUST / scope / acceptance が
@@ -63,7 +66,7 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
 4. **approve**: `agent-delegator approve --run <id>`
    - unresolved を残して進む場合のみ `--allow-unresolved`（理由をユーザーに示す）
    - compile 後にコミットが挟まった場合は、新 base で Brief を再確認してから `--allow-base-change`
-5. **implement**（Codex workspace-write。background 実行で完了通知を待つ）:
+5. **implement**（Codex workspace-write）:
    `agent-delegator implement --run <id>`。timeout は small なら既定 1800 秒、medium は概ね
    `--timeout-seconds=3600`、large refactor は `--timeout-seconds=7200` を開始目安にし、Brief の
    verification 規模に合わせて明示する。
@@ -72,7 +75,9 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
    `agent-delegator loop --run <id> --max-turns=<n> --max-minutes=<n>`。approved run では初回実装も
    行い、completed run では改善 turn から再開する。各 turn で approval / HEAD / worktree が再検証される。
 6. **結果処理**: run dir の `result.json` を読む。
-   - `completed` → 自分で diff をレビューし、Brief の verification を実行してから統合する
+   - `completed` → 自分で diff をレビューし、必要なら
+     `agent-delegator verify --run <id>` で repository 規約と Brief に基づく独立 smoke を委譲する。
+     `verification.json` の command / basis / status を確認し、最終統合判断は自分で行う
    - `needs-decision` → focused question に1つだけ答える:
      `agent-delegator resume --run <id> --message="<決定と理由>"`（background）。
      回答が MUST / scope / 受入条件を変えるなら resume せず Brief 編集 → revalidate → 再 approve
@@ -87,6 +92,21 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
    される。消えた worktree の runs dir は unavailable として表示される）。
    最小状態履歴は `agent-delegator history` で任意のローカルディレクトリから確認できる。
 
+## 長時間実行とCodex領域
+
+- `implement` / `loop` / `research --run` / `follow-up` / `verify`、および既存runの `compile` は
+  `--detach --backend=process|herdr|auto` で監督ジョブ化できる。新規compileをdetachする場合は先に
+  `collect` し、`compile --run <id> --detach` とする。
+- `agent-delegator jobs --active` または `jobs --id <job-id>` でPID、run、ログ、終了状態を確認する。
+  run自体の状態と中断回復は従来どおり `status` / `wait` を使う。
+- `process` は親Claudeや端末が終了しても独立PIDで継続する既定backend。`herdr` は現在のHerdr
+  workspaceに非フォーカスの専用tabを作る。Herdrを使っていない環境で暗黙に選ばない。
+- run作成時に `--codex-home=isolated` を付けると設定・ログ・session履歴を専用のprivate領域へ分け、
+  認証storeは既定で `keyring` にする。従来どおり全て共有する場合は `shared`（既定）、管理済みの
+  絶対pathを使う場合はそのpathを指定する。`--codex-auth-store=auto|keyring|file|shared-file` で明示できる。
+  既存loginがfileだけなら `shared-file` がauth.jsonだけをsymlinkする。認証をコピーしない。
+  最初のCodex call後はresume互換性のため選択を変更しない。
+
 ## 失敗と回復
 
 | 状況 | 回復 |
@@ -98,6 +118,8 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
 | resume の Codex thread 喪失 | `implement --run <id> --retry`（approved Brief から新セッションで再実装） |
 | active のまま固着（PID 再利用等） | Codex プロセスの残存がないことを確認して `status --run <id> --force-fail` |
 | inactive だが repository lock だけ残る | Codex プロセスの残存がないことを確認して `status --run <id> --force-unlock` |
+| detached job が failed / lost | `jobs --id <job-id>` の stdout/stderr と `status --run <id>` を確認し、runの通常のretry手順を使う |
+| verify が失敗 | `verificationFailure` と `attempts/verify/*` を確認する。実装runは completed のままなので、原因解消後に `verify` を再実行できる |
 
 ## 規律
 
@@ -108,5 +130,6 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
 - Codex が標準名で見つからない環境は `AGENT_DELEGATOR_CODEX_COMMAND=/absolute/path/to/codex`。
 - run ディレクトリ（`.agent-delegator/runs`）は transcript スナップショットを含む機微データ。
   公開・共有しない。
-- モデル選択は `AGENT_DELEGATOR_BRIEF_MODEL` / `AGENT_DELEGATOR_IMPLEMENT_MODEL`（未指定は
+- モデル選択は `AGENT_DELEGATOR_BRIEF_MODEL` / `AGENT_DELEGATOR_IMPLEMENT_MODEL` /
+  `AGENT_DELEGATOR_RESEARCH_MODEL` / `AGENT_DELEGATOR_VERIFICATION_MODEL`（未指定は
   Codex デフォルト）。

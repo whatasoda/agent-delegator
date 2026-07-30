@@ -27,12 +27,14 @@ export interface CodexUsage {
 export async function probeCodex(
   command = "codex",
   cwd = process.cwd(),
+  env?: NodeJS.ProcessEnv,
 ): Promise<{ command: string; version: string }> {
   try {
     const { stdout, stderr } = await execFileAsync(command, ["--version"], {
       cwd,
       timeout: 10_000,
       maxBuffer: 1024 * 1024,
+      env,
     });
     const version = `${stdout}${stderr}`.trim().split(/\r?\n/, 1)[0]?.trim();
     if (!version) throw new Error("Codex --version returned no version text");
@@ -42,6 +44,23 @@ export async function probeCodex(
       throw new Error(`Codex executable not found: ${command}; install Codex or set AGENT_DELEGATOR_CODEX_COMMAND`);
     }
     throw new Error(`Codex preflight failed for ${command}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+export async function probeCodexAuthentication(
+  command: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv | undefined,
+  configArgs: string[],
+): Promise<{ authenticated: boolean; status: string }> {
+  try {
+    const { stdout, stderr } = await execFileAsync(command, [...configArgs, "login", "status"], {
+      cwd, env, timeout: 10_000, maxBuffer: 1024 * 1024,
+    });
+    const status = `${stdout}${stderr}`.trim().split(/\r?\n/, 1)[0]?.trim() || "unknown";
+    return { authenticated: /^logged in\b/i.test(status), status };
+  } catch {
+    return { authenticated: false, status: "not-logged-in-or-unavailable" };
   }
 }
 
@@ -55,12 +74,14 @@ export async function runCodex(
     killGraceMs?: number;
     streamStderr?: boolean;
     command?: string;
+    env?: NodeJS.ProcessEnv;
   },
 ): Promise<CodexRunResult> {
   const child = spawn(options.command ?? "codex", args, {
     cwd: options.cwd,
     stdio: ["ignore", "pipe", "pipe"],
     detached: process.platform !== "win32",
+    env: options.env,
   });
   const events = createWriteStream(options.eventsPath, { encoding: "utf8", mode: 0o600 });
   const stderr = options.stderrPath
