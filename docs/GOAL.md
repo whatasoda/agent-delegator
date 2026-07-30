@@ -217,6 +217,12 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
   auto/keyring/file/shared-file認証storeを選択可能にした。isolatedはkeyringを既定にし、明示的な
   shared-fileだけ既存auth.jsonをsymlinkして設定・履歴から分離、
   session resume互換性のため最初のCodex call後は固定。（2026-07-30 done）
+- [x] P5-23: 実run feedbackのsandbox/証拠/失敗観測改善 — applicableなrepository policyを自動で
+  Evidence化し、workspace-write networkをinherit/enabled/disabledから選択してpromptと履歴へ記録。
+  trusted baselineと失敗checkpointのobserved fingerprintを分離し、worktree overrideには件数/bytesを
+  表示。Codex JSONL失敗診断、iteration-after-successの別集計、repo root/failure phase投影も追加。
+  fuzzy citationの自動採用はexact-evidence境界を弱めるため不採用としcompiler指示だけ強化。
+  （2026-07-30 done）
 
 ### Trial — 実業務リポジトリ検証
 

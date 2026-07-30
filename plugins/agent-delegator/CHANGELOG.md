@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2 - 2026-07-30
+
+- Updated the exact core CLI compatibility preflight to `0.1.0-alpha.5`.
+- Added operator guidance for explicit workspace-write network policy, observed checkpoint state,
+  and post-implementation iteration-failure evaluation.
+
 ## 0.2.1 - 2026-07-30
 
 - Updated the exact core CLI compatibility preflight to `0.1.0-alpha.4`.

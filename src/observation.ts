@@ -301,14 +301,17 @@ export async function recordEvaluation(runDir: string, state: RunState, input: E
 export interface RunObservationSummary {
   schema_version: "1";
   run_id: string;
+  repo_root: string;
   runs_dir?: string;
   status: RunStatus;
   objective: string;
   delegation_pattern: "implementation" | "research" | "interactive" | "autonomous";
   experiment_variant: string | null;
   autonomous_stop_reason: string | null;
+  failure_phase: string | null;
+  implementation_completed_before_iteration_failure: boolean;
   verification_status: "passed" | "failed" | "partial" | "not-run" | null;
-  codex_environment: { mode: string; auth_store: string };
+  codex_environment: { mode: string; auth_store: string; network_access: string };
   detached_execution: { jobs: number; backends: string[]; job_ids: string[] };
   metadata: TaskMetadata;
   created_at: string;
@@ -367,6 +370,9 @@ export async function buildRunObservation(runDir: string): Promise<RunObservatio
   const evaluationErrors = evaluationValue === null ? [] : validateEvaluationRecord(evaluationValue);
   if (evaluationErrors.length) throw new Error(evaluationErrors.join("; "));
   const evaluation = evaluationValue as EvaluationRecord | null;
+  const implementationResult = await optionalJson<{ status?: unknown }>(join(runDir, "result.json"));
+  const completedBeforeIterationFailure = state.status === "failed" && state.failurePhase === "iterate" &&
+    implementationResult?.status === "completed";
   const salvagedAfterFailure = state.status === "failed" &&
     Boolean(evaluation && ["accepted-as-is", "accepted-with-changes"].includes(evaluation.outcome));
   const duration: Record<string, number> = {};
@@ -385,15 +391,19 @@ export async function buildRunObservation(runDir: string): Promise<RunObservatio
   return {
     schema_version: "1",
     run_id: state.runId,
+    repo_root: state.repoRoot,
     status: state.status,
     objective: state.objective,
     delegation_pattern: state.delegationPattern ?? "implementation",
     experiment_variant: state.experimentVariant ?? null,
     autonomous_stop_reason: state.autonomousStopReason ?? null,
+    failure_phase: state.failurePhase ?? null,
+    implementation_completed_before_iteration_failure: completedBeforeIterationFailure,
     verification_status: state.verificationStatus ?? null,
     codex_environment: {
       mode: state.codexHomeMode ?? "shared",
       auth_store: state.codexAuthStore ?? "auto",
+      network_access: state.workspaceWriteNetworkAccess ?? "inherit",
     },
     detached_execution: {
       jobs: new Set(events.flatMap((event) => event.metrics.headless_job_id ? [event.metrics.headless_job_id] : [])).size,
@@ -476,6 +486,7 @@ export interface ObservationReport {
     accepted: number;
     accepted_as_is: number;
     failed_runs: number;
+    post_implementation_iteration_failures: number;
     salvaged_runs: number;
     needs_decision_events: number;
     blocked_events: number;
@@ -514,6 +525,7 @@ export interface ObservationReport {
     implementation_quality: Record<string, number>;
     communication_quality: Record<string, number>;
     failure_category: Record<string, number>;
+    failure_phase: Record<string, number>;
     compiler_model: Record<string, number>;
     implementation_model: Record<string, number>;
     research_model: Record<string, number>;
@@ -521,6 +533,7 @@ export interface ObservationReport {
     verification_status: Record<string, number>;
     codex_home_mode: Record<string, number>;
     codex_auth_store: Record<string, number>;
+    workspace_write_network_access: Record<string, number>;
     execution_backend: Record<string, number>;
     delegation_pattern: Record<string, number>;
     experiment_variant: Record<string, number>;
@@ -659,8 +672,9 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
   const breakdowns: ObservationReport["breakdowns"] = {
     task_type: {}, complexity: {}, final_status: {}, evaluation_outcome: {}, brief_quality: {},
     implementation_quality: {}, communication_quality: {}, failure_category: {}, compiler_model: {},
+    failure_phase: {},
     implementation_model: {}, research_model: {}, verification_model: {}, verification_status: {},
-    codex_home_mode: {}, codex_auth_store: {}, execution_backend: {},
+    codex_home_mode: {}, codex_auth_store: {}, workspace_write_network_access: {}, execution_backend: {},
     delegation_pattern: {}, experiment_variant: {},
     autonomous_stop_reason: {}, delegator_revision: {},
   };
@@ -668,6 +682,7 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
     increment(breakdowns.task_type, run.metadata.task_type);
     increment(breakdowns.complexity, run.metadata.complexity);
     increment(breakdowns.final_status, run.status);
+    if (run.failure_phase) increment(breakdowns.failure_phase, run.failure_phase);
     increment(breakdowns.compiler_model, run.models.compiler);
     increment(breakdowns.implementation_model, run.models.implementation);
     increment(breakdowns.research_model, run.models.research);
@@ -675,6 +690,7 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
     if (run.attempts.verify !== undefined) increment(breakdowns.verification_status, run.verification_status);
     increment(breakdowns.codex_home_mode, run.codex_environment.mode);
     increment(breakdowns.codex_auth_store, run.codex_environment.auth_store);
+    increment(breakdowns.workspace_write_network_access, run.codex_environment.network_access);
     for (const backend of run.detached_execution.backends) increment(breakdowns.execution_backend, backend);
     increment(breakdowns.delegation_pattern, run.delegation_pattern);
     increment(breakdowns.experiment_variant, run.experiment_variant);
@@ -709,7 +725,10 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
       evaluated: evaluated.length,
       accepted: accepted.length,
       accepted_as_is: evaluated.filter((run) => evaluationField(run, "outcome") === "accepted-as-is").length,
-      failed_runs: runs.filter((run) => run.status === "failed" && !run.salvaged_after_failure).length,
+      failed_runs: runs.filter((run) => run.status === "failed" && !run.salvaged_after_failure &&
+        !run.implementation_completed_before_iteration_failure).length,
+      post_implementation_iteration_failures: runs.filter((run) =>
+        run.implementation_completed_before_iteration_failure).length,
       salvaged_runs: runs.filter((run) => run.salvaged_after_failure).length,
       needs_decision_events: runs.reduce((sum, run) => sum + run.needs_decision_count, 0),
       blocked_events: runs.reduce((sum, run) => sum + run.blocked_count, 0),
@@ -784,6 +803,7 @@ export function renderObservationReport(report: ObservationReport): string {
 - Accepted: ${report.summary.accepted}${acceptedPercent === null ? "" : ` (${acceptedPercent}%)`}
 - Accepted as-is: ${report.summary.accepted_as_is}
 - Failed runs: ${report.summary.failed_runs}
+- Post-implementation iteration failures: ${report.summary.post_implementation_iteration_failures}
 - Failed-state runs accepted after salvage: ${report.summary.salvaged_runs}
 - Needs-decision / blocked events: ${report.summary.needs_decision_events} / ${report.summary.blocked_events}
 - Read-only research worktree changes: ${report.summary.research_worktree_changes}
@@ -840,6 +860,10 @@ ${breakdownRows(report.breakdowns.codex_home_mode)}
 | --- | ---: |
 ${breakdownRows(report.breakdowns.codex_auth_store)}
 
+| Workspace-write network | Runs |
+| --- | ---: |
+${breakdownRows(report.breakdowns.workspace_write_network_access)}
+
 ## Pattern comparison
 
 | Pattern | Runs | Evaluated | Accepted | Codex calls | Input / cached / output tokens | Interactions | Review bytes | Implementation / research rating |
@@ -864,11 +888,17 @@ ${breakdownRows(report.breakdowns.evaluation_outcome)}
 | --- | ---: |
 ${breakdownRows(report.breakdowns.failure_category)}
 
+## Failure phases
+
+| Phase | Runs |
+| --- | ---: |
+${breakdownRows(report.breakdowns.failure_phase)}
+
 ## Runs
 
 | Run | Pattern | Variant | Type | Complexity | Status | Verify | Detached | Codex state | Brief edits | Gate rejections | Outcome |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-${report.runs.map((run) => `| ${markdownCell(run.run_id)} | ${markdownCell(run.delegation_pattern)} | ${markdownCell(run.experiment_variant ?? "-")} | ${markdownCell(run.metadata.task_type)} | ${markdownCell(run.metadata.complexity)} | ${markdownCell(run.salvaged_after_failure ? `${run.status} (salvaged)` : run.status)} | ${markdownCell(run.verification_status ?? "-")} | ${markdownCell(run.detached_execution.backends.join(",") || "-")} | ${markdownCell(`${run.codex_environment.mode}/${run.codex_environment.auth_store}`)} | ${run.brief_json_difference_count ?? "n/a"} | ${run.controller_cost.gate_rejections} | ${markdownCell(run.evaluation?.outcome ?? "not-evaluated")} |`).join("\n")}
+${report.runs.map((run) => `| ${markdownCell(run.run_id)} | ${markdownCell(run.delegation_pattern)} | ${markdownCell(run.experiment_variant ?? "-")} | ${markdownCell(run.metadata.task_type)} | ${markdownCell(run.metadata.complexity)} | ${markdownCell(run.salvaged_after_failure ? `${run.status} (salvaged)` : run.implementation_completed_before_iteration_failure ? `${run.status} (implementation completed; iterate failed)` : run.status)} | ${markdownCell(run.verification_status ?? "-")} | ${markdownCell(run.detached_execution.backends.join(",") || "-")} | ${markdownCell(`${run.codex_environment.mode}/${run.codex_environment.auth_store}/${run.codex_environment.network_access}`)} | ${run.brief_json_difference_count ?? "n/a"} | ${run.controller_cost.gate_rejections} | ${markdownCell(run.evaluation?.outcome ?? "not-evaluated")} |`).join("\n")}
 
 ${directoriesSection(report)}${report.invalid_runs.length ? `## Invalid runs\n\n${report.invalid_runs.map((item) => `- ${item.run_dir}: ${item.error}`).join("\n")}\n` : ""}`;
 }

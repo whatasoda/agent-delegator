@@ -52,11 +52,11 @@ directories are repository-local working state, not durable archives.
 ### Claude Code plugin
 
 The separately versioned thin plugin distributes the operator skill without bundling another CLI.
-Plugin `0.2.1` is verified with core CLI `0.1.0-alpha.4`; install that exact CLI version, then add
+Plugin `0.2.2` is verified with core CLI `0.1.0-alpha.5`; install that exact CLI version, then add
 this public repository as a marketplace:
 
 ```sh
-bun add --global @whatasoda/agent-delegator@0.1.0-alpha.4
+bun add --global @whatasoda/agent-delegator@0.1.0-alpha.5
 claude plugin marketplace add whatasoda/agent-delegator
 claude plugin install agent-delegator@whatasoda-agent-delegator --scope user
 ```
@@ -67,7 +67,7 @@ Run `/reload-plugins` in an existing Claude Code session, then invoke
 ```sh
 claude plugin marketplace update whatasoda-agent-delegator
 claude plugin update agent-delegator@whatasoda-agent-delegator --scope user
-bun add --global @whatasoda/agent-delegator@0.1.0-alpha.4
+bun add --global @whatasoda/agent-delegator@0.1.0-alpha.5
 ```
 
 The plugin checks the exact CLI version and runs `agent-delegator doctor --json` before delegation.
@@ -217,6 +217,22 @@ checks remain `not-run`. The sandbox permits test-generated ignored output, but 
 fails verification and saves a diagnostic checkpoint. An operational verification failure is kept
 separate from the already completed implementation lifecycle.
 
+Workspace-write commands (`implement`, `resume`, `loop`, and `verify`) accept
+`--network-access=inherit|enabled|disabled`. `inherit` is the backward-compatible default and leaves
+the effective Codex configuration unchanged; because agent-delegator cannot prove that effective
+value, its prompt tells Codex the network state is unknown. `enabled` and `disabled` pass an explicit
+Codex workspace-write network setting and record it in state, machine history, and reports. The
+selection is fixed after the first implementation or verification call so resumed sessions do not
+silently change capabilities. Network access does not authorize deploys, uploads, credential
+changes, or other external mutations.
+
+For trusted projects, Codex can also load a repository `.codex/config.toml`, for example
+`[sandbox_workspace_write]` with `network_access = true`. Use the explicit agent-delegator option
+when the implementer must receive an exact enabled/disabled statement; otherwise project and user
+configuration remains intentionally reported as inherited/unknown. When disabled, localhost is
+also unavailable inside the sandbox, so the prompts prohibit diagnosing a failed local connection
+as a stopped service.
+
 ## Context Request
 
 [`examples/context-request.json`](./examples/context-request.json) shows the full format. It can
@@ -238,6 +254,11 @@ implementation state; content inside every snapshot is still treated as untruste
 An omitted `project_profile` automatically uses `<repo>/agent-delegator.project.json` when present.
 Set it to `null` to disable the profile for a particular request. A named topic must exist in the
 profile, and required files/globs must resolve or collection fails.
+
+Applicable repository policy is collected even without a project profile: root-to-working-directory
+`AGENTS.md` and `CLAUDE.md` files plus the root `.editorconfig` are added as `policy` evidence and
+deduplicated against explicitly selected/profile sources. User-global policy is not copied into a
+portable run; add it explicitly only when it is safe and repository-contained.
 
 ## Project profile
 
@@ -298,6 +319,7 @@ the Claude skill select different default models without hard-coding model names
 - `AGENT_DELEGATOR_EXECUTION_BACKEND` (`process`, `herdr`, or `auto` for detached commands)
 - `AGENT_DELEGATOR_CODEX_HOME` (`shared`, `isolated`, or an absolute default for new runs)
 - `AGENT_DELEGATOR_CODEX_AUTH_STORE` (`auto`, `keyring`, `file`, or `shared-file`)
+- `AGENT_DELEGATOR_NETWORK_ACCESS` (`inherit`, `enabled`, or `disabled` for workspace-write calls)
 
 These are independent model-selection slots, not automatic cheap/high-quality routing. If neither
 slot is configured, both stages may use the same Codex default model. Cost/quality-based routing is
@@ -470,7 +492,7 @@ stderr log while the original lines stay in `events.jsonl`.
 Observation is designed for trial operation, not only incident debugging. A run records its input
 mix, initial tool identity plus each Codex attempt's tool revision/dirty fingerprint, stage
 durations, retries, model slots, Codex token usage, failure taxonomy, generated-versus-
-approved Brief changes, approval baseline, Codex home/auth selection, detached backend/job IDs,
+approved Brief changes, approval baseline, Codex home/auth/network selection, detached backend/job IDs,
 verification outcome, and each implementation checkpoint. Checkpoint patches
 include tracked and untracked files; fingerprints also cover untracked file contents.
 
@@ -494,7 +516,8 @@ Repository state is still checkpointed at evaluation time, making an accidental 
 read-only trial visible.
 
 `report` scans all run directories and emits a versioned JSON dataset or a Markdown summary. It
-includes acceptance, accepted-as-is, unrecovered failures, accepted timeout/interruption salvages,
+includes acceptance, accepted-as-is, unrecovered implementation failures, post-implementation
+iteration failures, accepted timeout/interruption salvages,
 needs-decision/blocked counts, Brief edit rate,
 task/complexity/delegation-pattern/experiment-variant/model/tool-revision/outcome breakdowns, average
 ratings and stage durations, source volume, token totals, and token-telemetry coverage. Pattern and
@@ -603,6 +626,12 @@ interrupted workspace-write attempt captures the surviving worktree in that atte
 `checkpoint.json` and `worktree.patch` when possible, but does not promote the checkpoint to the
 trusted retry baseline. Review the partial diff first; the unchanged fingerprint deliberately makes
 the next retry require `--allow-worktree-change` when work survived.
+
+State distinguishes that trusted retry baseline (`lastWorktreeSha256`) from the newest observed
+worktree (`observedWorktreeSha256`, changed-file count, and patch bytes). Failed/interrupted attempt
+checkpoints update only the observed fields and latest diagnostic checkpoint path. When
+`--allow-worktree-change` is used, stderr prints a bounded summary of the reviewed drift before
+Codex starts; it does not print file contents.
 
 The caller's foreground-command timeout is separate from the agent-delegator timeout. When Claude's
 shell tool cannot wait for the configured Codex duration, run the controller with the shell tool's

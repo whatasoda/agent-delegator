@@ -29,7 +29,7 @@ describe("runCodex", () => {
       { cwd, eventsPath, command: "/bin/sh" },
     );
 
-    expect(result).toEqual({ exitCode: 0, threadId: "thread-123", usage: null });
+    expect(result).toEqual({ exitCode: 0, threadId: "thread-123", usage: null, diagnostic: null });
     expect(await readFile(eventsPath, "utf8")).toContain('"turn.completed"');
   });
 
@@ -43,7 +43,7 @@ describe("runCodex", () => {
       { cwd, eventsPath, command: "/bin/sh" },
     );
 
-    expect(result).toEqual({ exitCode: 0, threadId: "thread-final", usage: null });
+    expect(result).toEqual({ exitCode: 0, threadId: "thread-final", usage: null, diagnostic: null });
     expect(await readFile(eventsPath, "utf8")).toContain("thread-final");
   });
 
@@ -58,8 +58,23 @@ describe("runCodex", () => {
       command: "/bin/sh",
     });
 
-    expect(result).toEqual({ exitCode: 7, threadId: null, usage: null });
+    expect(result).toEqual({ exitCode: 7, threadId: null, usage: null, diagnostic: null });
     expect(await readFile(eventsPath, "utf8")).toBe("not-json");
+  });
+
+  test("extracts a concise diagnostic from failed Codex events", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "agent-delegator-codex-"));
+    temporaryDirectories.push(cwd);
+    const eventsPath = join(cwd, "events.jsonl");
+    const event = JSON.stringify({ type: "turn.failed", error: { message: "sandbox denied\nnetwork" } });
+
+    const result = await runCodex(["-c", `printf '%s\n' '${event}'; exit 1`], {
+      cwd,
+      eventsPath,
+      command: "/bin/sh",
+    });
+
+    expect(result.diagnostic).toBe("sandbox denied network");
   });
 
   test("warns in retained stderr when Codex emits malformed event lines", async () => {

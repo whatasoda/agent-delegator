@@ -629,7 +629,7 @@ describe("agent-delegator CLI", () => {
     );
     await run(["approve", "--run", "verification-flow", "--runs-dir", runs, "--allow-unresolved"], repo, env);
     await run(
-      ["implement", "--run", "verification-flow", "--runs-dir", runs],
+      ["implement", "--run", "verification-flow", "--runs-dir", runs, "--network-access", "enabled"],
       repo,
       { ...env, FAKE_CODEX_IMPLEMENT_COMPLETED: "1" },
     );
@@ -641,7 +641,17 @@ describe("agent-delegator CLI", () => {
     expect(verification.policy_sources).toEqual(["AGENTS.md", "package.json"]);
     const calls = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]);
     expect(calls.at(-1)).toContain("workspace-write");
+    expect(calls.at(-1)).toContain("sandbox_workspace_write.network_access=true");
     expect(calls.at(-1)?.at(-1)).toContain("repository's own durable policy");
+    expect(calls.at(-1)?.at(-1)).toContain("Sandbox network access: ENABLED");
+
+    const changedNetwork = await run(
+      ["verify", "--run", "verification-flow", "--runs-dir", runs, "--network-access", "disabled"],
+      repo,
+      env,
+    );
+    expect(changedNetwork.exitCode).toBe(1);
+    expect(changedNetwork.stderr).toContain("network access is fixed");
 
     const mutated = await run(
       ["verify", "--run", "verification-flow", "--runs-dir", runs],
@@ -1703,11 +1713,13 @@ describe("agent-delegator CLI", () => {
     );
     expect(collected.exitCode).toBe(0);
     expect(JSON.parse(collected.stdout).status).toBe("prepared");
-    expect(JSON.parse(collected.stdout).sources).toBe(2);
+    expect(JSON.parse(collected.stdout).sources).toBe(4);
     await expect(readFile(log, "utf8")).rejects.toThrow();
 
     const bundle = JSON.parse(await readFile(join(runs, "context-run", "evidence-bundle.json"), "utf8"));
-    expect(bundle.sources.map((source: { role: string }) => source.role)).toEqual(["decision", "specification"]);
+    expect(bundle.sources.map((source: { role: string }) => source.role)).toEqual([
+      "decision", "policy", "policy", "specification",
+    ]);
     const evidence = await readFile(join(runs, "context-run", "evidence.md"), "utf8");
     expect(evidence).toContain("must wait for the exact greeting wording");
     expect(evidence).not.toContain("Add a greeting, but ask which wording to use");
@@ -1813,6 +1825,9 @@ describe("agent-delegator CLI", () => {
     expect(rejected.exitCode).toBe(1);
     expect(rejected.stderr).toContain("Repository worktree changed");
     expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(1);
+    const rejectedState = JSON.parse(await readFile(join(runs, "dirty", "state.json"), "utf8"));
+    expect(rejectedState).toMatchObject({ observedWorktreeChangedFileCount: 1 });
+    expect(rejectedState.observedWorktreePatchBytes).toBeGreaterThan(0);
 
     const allowed = await run(
       ["implement", "--allow-worktree-change", "--run", "dirty", "--runs-dir", runs],
@@ -1820,6 +1835,7 @@ describe("agent-delegator CLI", () => {
       env,
     );
     expect(allowed.exitCode).toBe(0);
+    expect(allowed.stderr).toContain("--allow-worktree-change accepted 1 changed files");
   });
 
   test("fails closed on an invalid result and permits an explicit safe retry", async () => {
@@ -1909,7 +1925,9 @@ describe("agent-delegator CLI", () => {
       status: "failed",
       failurePhase: "implement",
       lastWorktreeSha256: approvedFingerprint,
+      observedWorktreeChangedFileCount: 1,
     });
+    expect(JSON.parse(recovered.stdout).observedWorktreeSha256).not.toBe(approvedFingerprint);
     expect(JSON.parse(recovered.stdout).failure).toContain("Partial worktree checkpoint saved");
     expect(await readFile(
       join(runs, "stale-write", "attempts", "implement", "001", "worktree.patch"),
@@ -1996,6 +2014,7 @@ describe("agent-delegator CLI", () => {
       status: "failed",
       failurePhase: "implement",
       lastWorktreeSha256: approvedState.lastWorktreeSha256,
+      observedWorktreeChangedFileCount: 1,
       implementationSessionId: "thread-implementer",
     });
     const attemptDir = join(runs, "timeout-salvage", "attempts", "implement", "001");

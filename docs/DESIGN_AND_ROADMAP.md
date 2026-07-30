@@ -281,6 +281,17 @@ Codex homeはsession探索とresumeに関わるため、最初のCodex call後�
 ephemeral modeはresume、follow-up、loopと相容れないため、このsession-oriented protocolのhome分離とは
 混ぜず将来のone-shot patternとして扱う。
 
+### 4.18 sandbox capability は推測せず選択値と観測値を分ける
+
+workspace-write のnetworkは `inherit` を後方互換の既定にし、実効Codex設定をagent-delegatorが
+断定しない。必要なrunだけ `enabled` / `disabled` を明示し、Codex config引数、prompt、state、history、
+reportを同じ値にする。network許可は外部mutation許可とは独立であり、deploy等の禁止は維持する。
+
+失敗checkpointは部分成果の観測であって承認ではない。trusted retry baselineとobserved worktreeを
+別フィールドにし、失敗後もbaselineは進めず、observed fingerprint / file count / patch bytesと診断
+checkpointだけを更新する。成功済み実装の後のiteration失敗もrun stateではfailedのまま保持するが、
+品質集計ではinitial implementation failureと別指標にする。
+
 ## 5. 現在地: Stage 1
 
 実装済み:

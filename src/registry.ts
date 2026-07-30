@@ -35,9 +35,11 @@ export interface RunHistoryEntry {
     verification_calls?: number;
   };
   failure: string | null;
+  failure_phase?: string | null;
+  implementation_completed_before_iteration_failure?: boolean;
   salvaged?: boolean;
   autonomous_stop_reason?: string | null;
-  codex_environment?: { mode: string; auth_store: string };
+  codex_environment?: { mode: string; auth_store: string; network_access?: string };
   evaluation?: {
     recorded_at: string;
     outcome: string;
@@ -150,6 +152,9 @@ function isRunHistoryEntry(value: unknown): value is RunHistoryEntry {
     Boolean(entry.models && typeof entry.models === "object") &&
     Boolean(entry.attempts && typeof entry.attempts === "object") &&
     (entry.failure === null || typeof entry.failure === "string") &&
+    (entry.failure_phase === undefined || entry.failure_phase === null || typeof entry.failure_phase === "string") &&
+    (entry.implementation_completed_before_iteration_failure === undefined ||
+      typeof entry.implementation_completed_before_iteration_failure === "boolean") &&
     (entry.salvaged === undefined || typeof entry.salvaged === "boolean") &&
     (entry.autonomous_stop_reason === undefined || entry.autonomous_stop_reason === null ||
       typeof entry.autonomous_stop_reason === "string") &&

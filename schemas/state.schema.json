@@ -45,6 +45,9 @@
     },
     "approvedWorktreeSha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
     "lastWorktreeSha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "observedWorktreeSha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "observedWorktreeChangedFileCount": { "type": ["integer", "null"], "minimum": 0 },
+    "observedWorktreePatchBytes": { "type": ["integer", "null"], "minimum": 0 },
     "contextRequestPath": { "type": ["string", "null"] },
     "evidenceBundlePath": { "type": ["string", "null"] },
     "evidenceBundleSha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
@@ -83,11 +86,12 @@
     "iterationCount": { "type": "integer", "minimum": 0 },
     "autonomousStopReason": {
       "type": ["string", "null"],
-      "enum": ["converged", "needs-decision", "blocked", "turn-limit", "time-limit", "checkpoint-error", null]
+      "enum": ["converged", "needs-decision", "blocked", "turn-limit", "time-limit", "checkpoint-error", "iteration-failure", null]
     },
     "codexHomeMode": { "type": "string", "enum": ["shared", "isolated", "custom"] },
     "codexHome": { "type": ["string", "null"] },
     "codexAuthStore": { "type": "string", "enum": ["auto", "keyring", "file", "shared-file"] },
+    "workspaceWriteNetworkAccess": { "type": "string", "enum": ["inherit", "enabled", "disabled"] },
     "verificationModel": { "type": ["string", "null"] },
     "verificationSessionId": { "type": ["string", "null"] },
     "verificationCount": { "type": "integer", "minimum": 0 },

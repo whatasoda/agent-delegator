@@ -9,6 +9,7 @@ export interface CodexRunResult {
   exitCode: number;
   threadId: string | null;
   usage: CodexUsage | null;
+  diagnostic: string | null;
 }
 
 export class CodexInvocationError extends Error {
@@ -90,6 +91,7 @@ export async function runCodex(
   let pending = "";
   let threadId: string | null = null;
   let usage: CodexUsage | null = null;
+  let diagnostic: string | null = null;
   let malformedEventLines = 0;
   const observeEvent = (line: string): void => {
     const value = JSON.parse(line) as unknown;
@@ -100,8 +102,21 @@ export async function runCodex(
       type?: string;
       thread_id?: string;
       usage?: { input_tokens?: number; cached_input_tokens?: number; output_tokens?: number };
+      message?: unknown;
+      error?: unknown;
     };
     if (event.type === "thread.started" && event.thread_id) threadId = event.thread_id;
+    if (event.type === "turn.failed" || event.type === "error") {
+      const candidate = typeof event.message === "string"
+        ? event.message
+        : typeof event.error === "string"
+          ? event.error
+          : event.error && typeof event.error === "object" &&
+              typeof (event.error as { message?: unknown }).message === "string"
+            ? (event.error as { message: string }).message
+            : null;
+      if (candidate) diagnostic = candidate.replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, 1000);
+    }
     if (event.usage) {
       usage ??= { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0 };
       usage.input_tokens += event.usage.input_tokens ?? 0;
@@ -219,7 +234,7 @@ export async function runCodex(
     }
     throw spawnError;
   }
-  const result = { exitCode, threadId, usage };
+  const result = { exitCode, threadId, usage, diagnostic };
   if (timedOut) throw new CodexInvocationError(`Codex exceeded the ${options.timeoutMs}ms timeout`, result);
   if (interruptedSignal) throw new CodexInvocationError(`Codex was interrupted by ${interruptedSignal}`, result);
   return result;

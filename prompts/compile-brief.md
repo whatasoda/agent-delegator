@@ -20,8 +20,9 @@ Rules:
    issue as unresolved instead of inventing it.
 5. Preserve the difference between project requirements and suggested implementation details.
 6. Include rejected alternatives when they explain why an attractive implementation is wrong.
-7. Quotes in sources must be short, exact substrings from the cited snapshot (and cited transcript
-   turn), not paraphrases or large excerpts. A quote proves referential integrity only; Claude still
+7. Quotes in sources must be short, byte-for-byte substrings from the cited snapshot (and cited
+   transcript turn), not paraphrases or large excerpts. Copy the source's exact spelling, markup,
+   punctuation, and Unicode; do not normalize or reconstruct it. A quote proves referential integrity only; Claude still
    decides whether it semantically supports the compiled claim.
    Structured AskUserQuestion decisions in a transcript snapshot have no text-turn number; cite
    those with the transcript `source_id`, a `null` turn, and an exact quote from the decision event.
@@ -43,4 +44,7 @@ Rules:
     other owner-only integration verification out of the delegated verification list; describe a
     local substitute when one is supported by evidence. If a required verification environment is
     undecided, record that gap as unresolved instead of creating a predictably blocked task.
+    Never present an unresolved URL, path, identifier, credential name, or command argument as a
+    runnable verification step. Label the placeholder explicitly and name the owner decision or
+    environment input needed to resolve it.
 11. Do not edit files. Produce only the JSON object required by the supplied output schema.

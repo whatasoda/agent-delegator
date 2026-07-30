@@ -12,7 +12,8 @@ that exercises the completed change; do not guess a generic package-manager comm
 repository specifies another form.
 
 Do not commit, push, create or merge a PR, deploy, alter credentials, access production systems, or
-mutate external state. Record checks that require network access, unavailable credentials, or an
+mutate external state. Follow the task prompt's exact network-access statement. Record checks that
+require unavailable network access, unavailable credentials, or an
 integration owner as `not-run` with the precise reason. Report every attempted command and the
 instruction, Brief item, script, or configuration that justified it. Return only the JSON object
 required by the supplied output schema.

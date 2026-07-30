@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
-import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import contextRequestSchema from "../schemas/context-request.schema.json";
 import evidenceBundleSchema from "../schemas/evidence-bundle.schema.json";
@@ -277,7 +277,35 @@ export async function collectEvidence(options: {
     profile = value as ProjectProfile;
   }
 
+  const policySources: RepositorySourceRequest[] = [];
+  const policyCandidates = new Set<string>([join(canonicalRepoRoot, ".editorconfig")]);
+  let policyDirectory = canonicalRepoRoot;
+  if (options.transcriptCwd) {
+    const actualCwd = await realpath(options.transcriptCwd).catch(() => canonicalRepoRoot);
+    const fromRoot = relative(canonicalRepoRoot, actualCwd);
+    if (fromRoot !== ".." && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot)) {
+      policyDirectory = actualCwd;
+    }
+  }
+  for (;;) {
+    policyCandidates.add(join(policyDirectory, "AGENTS.md"));
+    policyCandidates.add(join(policyDirectory, "CLAUDE.md"));
+    if (policyDirectory === canonicalRepoRoot) break;
+    policyDirectory = dirname(policyDirectory);
+  }
+  for (const candidate of policyCandidates) {
+    if (!(await stat(candidate).then((value) => value.isFile()).catch(() => false))) continue;
+    policySources.push({
+      kind: "file",
+      path: relative(canonicalRepoRoot, candidate),
+      role: "policy",
+      required: false,
+      selected_because: "Applicable durable repository policy discovered automatically",
+    });
+  }
+
   const sourceRequests: RepositorySourceRequest[] = [
+    ...policySources,
     ...(profile?.default_sources ?? []),
     ...options.request.profile_topics.flatMap((topic) => {
       const route = profile?.topics[topic];

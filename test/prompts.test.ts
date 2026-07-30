@@ -43,6 +43,8 @@ describe("delegation prompts", () => {
       .replace(/\s+/g, " ");
 
     expect(compiler).toContain("runnable in a workspace-write sandbox without credentials or network access");
+    expect(compiler).toContain("do not normalize or reconstruct it");
+    expect(compiler).toContain("Never present an unresolved URL, path, identifier");
     expect(implementer).toContain("Record an unavailable owner-only check as `not-run`");
     expect(implementer).toContain("do not return `blocked` solely because");
     expect(iterator).toContain("network-dependent checks as `not-run`");

@@ -89,6 +89,28 @@ describe("evidence collection", () => {
     expect(await readFile(join(runDir, "context-request.json"), "utf8")).toContain('"profile_topics"');
   });
 
+  test("automatically collects applicable nested repository policies", async () => {
+    const { repo, runDir, transcript } = await fixture();
+    const nested = join(repo, "packages", "api");
+    await mkdir(nested, { recursive: true });
+    await writeFile(join(repo, ".editorconfig"), "root = true\n");
+    await writeFile(join(repo, "packages", "CLAUDE.md"), "Package policy\n");
+    await writeFile(join(nested, "AGENTS.md"), "Nested policy\n");
+    const request: ContextRequest = {
+      schema_version: "1",
+      objective: "Use applicable policies",
+      project_profile: null,
+      profile_topics: [],
+      transcripts: [{ kind: "transcript", path: transcript, from_turn: 2, to_turn: 2 }],
+      sources: [],
+    };
+
+    const { bundle } = await collectEvidence({ repoRoot: repo, transcriptCwd: nested, runDir, request });
+
+    expect(bundle.sources.filter((source) => source.role === "policy").map((source) => source.locator).sort())
+      .toEqual([".editorconfig", "AGENTS.md", "packages/CLAUDE.md", "packages/api/AGENTS.md"]);
+  });
+
   test("rejects unknown profile topics", async () => {
     const { repo, runDir, transcript } = await fixture();
     const request: ContextRequest = {
@@ -146,7 +168,8 @@ describe("evidence collection", () => {
 
     const { bundle } = await collectEvidence({ repoRoot: repo, runDir, request });
 
-    expect(bundle.sources.map((source) => source.revision)).toEqual(["turns:2-2", "turns:2-2"]);
+    expect(bundle.sources.filter((source) => source.kind === "transcript").map((source) => source.revision))
+      .toEqual(["turns:2-2", "turns:2-2"]);
     const evidence = await readFile(join(runDir, "evidence.md"), "utf8");
     expect(evidence).toContain("API decision");
     expect(evidence).toContain("second selected decision");

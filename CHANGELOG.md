@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## [0.1.0-alpha.5] - 2026-07-30
+
+### Added
+
+- Added explicit inherited/enabled/disabled workspace-write network policy with prompt, state,
+  history, and report observability.
+- Automatically collect applicable repository `AGENTS.md`, `CLAUDE.md`, and `.editorconfig` files
+  as policy evidence.
+
+### Changed
+
+- Separate trusted retry baselines from observed failed-attempt checkpoints and summarize reviewed
+  worktree drift before an override.
+- Surface structured Codex failure diagnostics and distinguish post-implementation iteration
+  failures in reports.
+
 ## [0.1.0-alpha.4] - 2026-07-30
 
 ### Fixed

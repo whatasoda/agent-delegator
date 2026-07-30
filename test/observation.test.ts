@@ -112,6 +112,7 @@ describe("run observation", () => {
       token_observation_percent: null,
     });
     expect(report.runs[0]?.metadata).toEqual({ task_type: "other", complexity: "unknown", tags: [] });
+    expect(report.runs[0]?.repo_root).toBe(root);
     expect(report.runs[0]?.controller_cost).toEqual({
       tracked_invocations: 0,
       gate_rejections: 0,
@@ -236,6 +237,32 @@ describe("run observation", () => {
     expect(report.summary).toMatchObject({ failed_runs: 0, salvaged_runs: 1 });
     expect(report.runs[0]?.salvaged_after_failure).toBe(true);
     expect(renderObservationReport(report)).toContain("failed (salvaged)");
+  });
+
+  test("separates a failed improvement turn from a failed implementation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-delegator-iteration-failure-"));
+    temporaryDirectories.push(root);
+    const runsDir = join(root, "runs");
+    const runDir = join(runsDir, "iteration-failed");
+    await mkdir(runDir, { recursive: true });
+    const state = legacyState("iteration-failed", root);
+    state.status = "failed";
+    state.failure = "Autonomous iterator exited with code 1";
+    state.failurePhase = "iterate";
+    state.autonomousStopReason = "iteration-failure";
+    state.iterationCount = 1;
+    await writeFile(join(runDir, "result.json"), JSON.stringify({ status: "completed" }));
+    await writeRunState(runDir, state);
+
+    const report = await buildObservationReport(runsDir);
+
+    expect(report.summary).toMatchObject({ failed_runs: 0, post_implementation_iteration_failures: 1 });
+    expect(report.breakdowns.failure_phase).toEqual({ iterate: 1 });
+    expect(report.runs[0]).toMatchObject({
+      failure_phase: "iterate",
+      implementation_completed_before_iteration_failure: true,
+    });
+    expect(renderObservationReport(report)).toContain("failed (implementation completed; iterate failed)");
   });
 
   test("rejects incomplete Claude evaluations and corrupt event streams", async () => {

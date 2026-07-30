@@ -46,6 +46,9 @@ export interface RunState {
   attempts?: { collect: number; compile: number; implement: number; resume: number };
   approvedWorktreeSha256?: string | null;
   lastWorktreeSha256?: string | null;
+  observedWorktreeSha256?: string | null;
+  observedWorktreeChangedFileCount?: number | null;
+  observedWorktreePatchBytes?: number | null;
   contextRequestPath?: string | null;
   evidenceBundlePath?: string | null;
   evidenceBundleSha256?: string | null;
@@ -65,10 +68,11 @@ export interface RunState {
   researchSessionId?: string | null;
   researchTurnCount?: number;
   iterationCount?: number;
-  autonomousStopReason?: "converged" | "needs-decision" | "blocked" | "turn-limit" | "time-limit" | "checkpoint-error" | null;
+  autonomousStopReason?: "converged" | "needs-decision" | "blocked" | "turn-limit" | "time-limit" | "checkpoint-error" | "iteration-failure" | null;
   codexHomeMode?: CodexHomeMode;
   codexHome?: string | null;
   codexAuthStore?: CodexAuthStore;
+  workspaceWriteNetworkAccess?: "inherit" | "enabled" | "disabled";
   verificationModel?: string | null;
   verificationSessionId?: string | null;
   verificationCount?: number;
@@ -164,6 +168,7 @@ export async function writeRunState(runDir: string, state: RunState): Promise<vo
   await writeJsonAtomic(join(runDir, "state.json"), state);
   if (state.observationVersion !== 1) return;
   const evaluation = await historyEvaluation(runDir);
+  const completedBeforeIterationFailure = await implementationCompletedBeforeIterationFailure(runDir, state);
   await appendRunHistoryEntry({
     run_id: state.runId,
     run_dir: resolve(runDir),
@@ -186,6 +191,8 @@ export async function writeRunState(runDir: string, state: RunState): Promise<vo
       ...((state.verificationCount ?? 0) > 0 ? { verification_calls: state.verificationCount } : {}),
     },
     failure: state.failure,
+    failure_phase: state.failurePhase ?? null,
+    implementation_completed_before_iteration_failure: completedBeforeIterationFailure,
     salvaged: state.status === "failed" && Boolean(
       evaluation && ["accepted-as-is", "accepted-with-changes"].includes(evaluation.outcome),
     ),
@@ -193,9 +200,20 @@ export async function writeRunState(runDir: string, state: RunState): Promise<vo
     codex_environment: {
       mode: state.codexHomeMode ?? "shared",
       auth_store: state.codexAuthStore ?? "auto",
+      network_access: state.workspaceWriteNetworkAccess ?? "inherit",
     },
     evaluation,
   });
+}
+
+async function implementationCompletedBeforeIterationFailure(runDir: string, state: RunState): Promise<boolean> {
+  if (state.status !== "failed" || state.failurePhase !== "iterate") return false;
+  try {
+    const result = await readJson<{ status?: unknown }>(join(runDir, "result.json"));
+    return result.status === "completed";
+  } catch {
+    return false;
+  }
 }
 
 async function historyEvaluation(runDir: string): Promise<RunHistoryEntryEvaluation | null> {

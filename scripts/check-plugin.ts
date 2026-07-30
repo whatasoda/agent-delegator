@@ -19,7 +19,7 @@ const manifest = await json<PluginManifest>("plugins/agent-delegator/.claude-plu
 const marketplace = await json<Marketplace>(".claude-plugin/marketplace.json");
 const entry = marketplace.plugins.find((plugin) => plugin.name === manifest.name);
 
-if (packageJson.version !== "0.1.0-alpha.4") throw new Error("Update the plugin's verified core CLI version");
+if (packageJson.version !== "0.1.0-alpha.5") throw new Error("Update the plugin's verified core CLI version");
 if (manifest.name !== "agent-delegator") throw new Error("Unexpected plugin name");
 if (!entry) throw new Error("Plugin is missing from the marketplace");
 if (entry.version !== manifest.version) throw new Error("Plugin and marketplace versions differ");
