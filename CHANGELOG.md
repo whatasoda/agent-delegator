@@ -42,6 +42,8 @@
   changes made during delegated workspace-write execution.
 - Preserved valid JSONL records when recovering torn appends and archived the invalid tail before
   repairing the active event log.
+- Updated the owner release workflow to an OIDC-capable Node/npm toolchain and made the public
+  `alpha` dist-tag explicit at publish time.
 
 ## [0.1.0-alpha.1] - 2026-07-27
 
