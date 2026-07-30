@@ -136,7 +136,9 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
   release workflow に一本化。npx/bunx 経由の install→launcher→CLI 実行を検証済み。
   なお npm は初回 publish で `latest` を必ず付与するため（撤回不可）、`latest` も当面 alpha 版を
   指す。安定版リリース時に自然に移行する。（2026-07-27 done）
-- [ ] D-5: public marketplace 化＋thin plugin（operator skill の配布）。agent-extensions と同型。
+- [x] D-5: public marketplace 化＋thin plugin（operator skill の配布）。repo 内 marketplace、独立
+  plugin SemVer、core CLI exact compatibility、skill 同期検査、Claude strict validation、user-scope
+  install/update smoke を整備。（2026-07-30 done）
 
 ### Phase 5 — 監査残件（小粒。trial で実害が出たものから拾う）
 

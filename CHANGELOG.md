@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- Added the public `whatasoda-agent-delegator` Claude Code marketplace and independently versioned
+  `agent-delegator` plugin, including the `delegate-codex` operator skill, exact core CLI preflight,
+  update guidance, and a cross-repository validation handoff.
+- Added CI validation that keeps the marketplace/plugin versions, verified core CLI version, and
+  personal/plugin operator-skill copies in sync.
+
 ## [0.1.0-alpha.2] - 2026-07-30
 
 ### Added

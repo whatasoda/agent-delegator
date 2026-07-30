@@ -1,5 +1,5 @@
 ---
-name: agent-delegator
+name: delegate-codex
 description: >-
   Delegate bounded implementation, autonomous improvement, or read-only repository research from the current Claude session
   to Codex via the agent-delegator CLI. Use when the user says "Codex に委譲", "Codex に調査を任せる",

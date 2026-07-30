@@ -10,6 +10,7 @@ Use package scripts through `bun run`:
 
 ```sh
 bun install --frozen-lockfile
+bun scripts/check-plugin.ts
 bun run typecheck
 bun run test
 bun run build

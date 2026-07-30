@@ -1,0 +1,23 @@
+{
+  "name": "whatasoda-agent-delegator",
+  "owner": {
+    "name": "whatasoda"
+  },
+  "description": "Claude Code operator plugins for observable Claude-to-Codex delegation",
+  "plugins": [
+    {
+      "name": "agent-delegator",
+      "source": "./plugins/agent-delegator",
+      "description": "Delegate bounded implementation, autonomous improvement, and read-only research from Claude Code to Codex",
+      "version": "0.1.0",
+      "author": {
+        "name": "whatasoda"
+      },
+      "homepage": "https://github.com/whatasoda/agent-delegator",
+      "repository": "https://github.com/whatasoda/agent-delegator",
+      "license": "MIT",
+      "category": "Developer Tools",
+      "tags": ["codex", "delegation", "research", "automation"]
+    }
+  ]
+}

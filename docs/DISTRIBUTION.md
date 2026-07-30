@@ -59,6 +59,7 @@ The history-preserving repository extraction is complete. Before each registry p
 
    ```sh
    bun install --frozen-lockfile
+   bun scripts/check-plugin.ts
    bun run typecheck
    bun run test
    bun run build
@@ -79,22 +80,32 @@ agent-delegator --help
 
 ## Phase 2: Claude Code plugin
 
-Create a separately versioned plugin containing:
+The separately versioned plugin is distributed from this repository's public Claude Code marketplace:
 
 ```text
-.claude-plugin/plugin.json
-skills/delegate-codex/SKILL.md
-handoffs/cross-repository-validation.md
+.claude-plugin/marketplace.json
+plugins/agent-delegator/
+  .claude-plugin/plugin.json
+  skills/delegate-codex/SKILL.md
+  handoffs/cross-repository-validation.md
 ```
 
-The first plugin version should be thin: resolve `agent-delegator` from `PATH`, verify a compatible
-CLI version, and give one precise installation instruction when it is absent. Do not reach outside
-the installed plugin cache for a development checkout. Keep target-specific profiles in target
-repositories.
+Plugin `0.1.0` is thin: it resolves `agent-delegator` from `PATH`, requires core CLI
+`0.1.0-alpha.2`, runs `doctor`, and gives one exact installation instruction when versions differ.
+It does not reach outside the installed plugin cache for a development checkout. Target-specific
+profiles remain in target repositories.
 
-After local `--plugin-dir` testing, publish the plugin through a private marketplace. Move to a
-public marketplace only after the core package identity, compatibility policy, and upgrade behavior
-have stabilized.
+Add the GitHub marketplace and install the plugin with:
+
+```sh
+claude plugin marketplace add whatasoda/agent-delegator
+claude plugin install agent-delegator@whatasoda-agent-delegator --scope user
+```
+
+The plugin and marketplace entry use the same explicit SemVer. Every operator-skill change must bump
+both values; pushing without a bump intentionally does not update installed caches. The core CLI and
+plugin release independently, and `bun scripts/check-plugin.ts` fails when their verified
+compatibility or duplicated personal/plugin skill content drifts.
 
 ## Phase 3: standalone executable
 

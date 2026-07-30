@@ -49,6 +49,30 @@ and approval schema version 3.
 During the alpha series these schemas may change between versions without a migration path; run
 directories are repository-local working state, not durable archives.
 
+### Claude Code plugin
+
+The separately versioned thin plugin distributes the operator skill without bundling another CLI.
+Plugin `0.1.0` is verified with core CLI `0.1.0-alpha.2`; install that exact CLI version, then add
+this public repository as a marketplace:
+
+```sh
+bun add --global @whatasoda/agent-delegator@0.1.0-alpha.2
+claude plugin marketplace add whatasoda/agent-delegator
+claude plugin install agent-delegator@whatasoda-agent-delegator --scope user
+```
+
+Run `/reload-plugins` in an existing Claude Code session, then invoke
+`/agent-delegator:delegate-codex` or describe a matching delegation task. Update the two independently:
+
+```sh
+claude plugin marketplace update whatasoda-agent-delegator
+claude plugin update agent-delegator@whatasoda-agent-delegator --scope user
+bun add --global @whatasoda/agent-delegator@0.1.0-alpha.2
+```
+
+The plugin checks the exact CLI version and runs `agent-delegator doctor --json` before delegation.
+Target-repository profiles remain in their target repositories and are never embedded in the plugin.
+
 ## Pipeline
 
 ```text
