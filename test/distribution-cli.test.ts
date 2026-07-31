@@ -8,6 +8,35 @@ import packageJson from "../package.json";
 const temporaryDirectories: string[] = [];
 const cli = resolve(import.meta.dir, "../src/cli.ts");
 
+async function fakeUpdateToolchain(root: string) {
+  const globalBin = join(root, "bin");
+  const bunLog = join(root, "bun.log");
+  const syncLog = join(root, "sync.log");
+  const fakeBun = join(root, "fake-bun");
+  await mkdir(globalBin);
+  await writeFile(
+    fakeBun,
+    `#!/usr/bin/env bun
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+if (args[0] === "add") {
+  appendFileSync(process.env.FAKE_BUN_LOG, args.join(" ") + "\\n");
+  await Bun.sleep(Number(process.env.FAKE_ADD_DELAY_MS ?? 0));
+} else if (args.join(" ") === "pm bin -g") process.stdout.write(process.env.FAKE_GLOBAL_BIN + "\\n");
+else process.exit(2);
+`,
+  );
+  await writeFile(
+    join(globalBin, "agent-delegator"),
+    `#!/usr/bin/env bun
+import { appendFileSync } from "node:fs";
+appendFileSync(process.env.FAKE_SYNC_LOG, process.argv.slice(2).join(" ") + "\\n");
+`,
+  );
+  await Promise.all([chmod(fakeBun, 0o755), chmod(join(globalBin, "agent-delegator"), 0o755)]);
+  return { globalBin, bunLog, syncLog, fakeBun };
+}
+
 async function run(args: string[], environment: Record<string, string | undefined> = process.env) {
   const child = Bun.spawn([process.execPath, cli, ...args], {
     cwd: resolve(import.meta.dir, ".."),
@@ -56,10 +85,14 @@ describe("setup and sync commands", () => {
   test("returns cached status immediately and refreshes it in a detached process", async () => {
     const config = await mkdtemp(join(tmpdir(), "agent-delegator-cli-update-check-"));
     temporaryDirectories.push(config);
+    let registryRequests = 0;
     const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
-      fetch: () => Response.json({ "dist-tags": { alpha: "0.1.0-alpha.999" } }),
+      fetch: () => {
+        registryRequests += 1;
+        return Response.json({ "dist-tags": { alpha: "0.1.0-alpha.999" } });
+      },
     });
     try {
       const result = await run(["update-check", "--json"], {
@@ -78,6 +111,23 @@ describe("setup and sync commands", () => {
         await Bun.sleep(10);
       }
       expect(state.lastCheck?.latestVersion).toBe("0.1.0-alpha.999");
+      const lockPath = join(config, "agent-delegator", "update.lock");
+      for (let attempt = 0; attempt < 100 && await Bun.file(lockPath).exists(); attempt += 1) {
+        await Bun.sleep(10);
+      }
+
+      const nextInvocation = await run(["update-check", "--json"], {
+        ...process.env,
+        CLAUDE_CONFIG_DIR: config,
+        AGENT_DELEGATOR_UPDATE_REGISTRY_URL: server.url.toString(),
+      });
+      expect(nextInvocation.exitCode).toBe(0);
+      expect(JSON.parse(nextInvocation.stdout).notice).toContain("0.1.0-alpha.999 is available");
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if (registryRequests === 2 && !(await Bun.file(lockPath).exists())) break;
+        await Bun.sleep(10);
+      }
+      expect(registryRequests).toBe(2);
     } finally {
       server.stop(true);
     }
@@ -111,27 +161,7 @@ describe("setup and sync commands", () => {
     const root = await mkdtemp(join(tmpdir(), "agent-delegator-cli-upgrade-"));
     temporaryDirectories.push(root);
     const config = join(root, "claude");
-    const globalBin = join(root, "bin");
-    const bunLog = join(root, "bun.log");
-    const syncLog = join(root, "sync.log");
-    const fakeBun = join(root, "fake-bun");
-    await mkdir(globalBin);
-    await writeFile(
-      fakeBun,
-      `#!/usr/bin/env bun
-const args = process.argv.slice(2);
-if (args[0] === "add") await Bun.write(process.env.FAKE_BUN_LOG, args.join(" "));
-else if (args.join(" ") === "pm bin -g") process.stdout.write(process.env.FAKE_GLOBAL_BIN + "\\n");
-else process.exit(2);
-`,
-    );
-    await writeFile(
-      join(globalBin, "agent-delegator"),
-      `#!/usr/bin/env bun
-await Bun.write(process.env.FAKE_SYNC_LOG, process.argv.slice(2).join(" "));
-`,
-    );
-    await Promise.all([chmod(fakeBun, 0o755), chmod(join(globalBin, "agent-delegator"), 0o755)]);
+    const { globalBin, bunLog, syncLog, fakeBun } = await fakeUpdateToolchain(root);
     const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
@@ -149,8 +179,59 @@ await Bun.write(process.env.FAKE_SYNC_LOG, process.argv.slice(2).join(" "));
       });
 
       expect(result.exitCode).toBe(0);
-      expect(await readFile(bunLog, "utf8")).toBe("add --global @whatasoda/agent-delegator@0.1.0-alpha.999");
-      expect(await readFile(syncLog, "utf8")).toBe(`sync --claude-config-dir ${config} --json`);
+      expect((await readFile(bunLog, "utf8")).trim())
+        .toBe("add --global @whatasoda/agent-delegator@0.1.0-alpha.999");
+      expect((await readFile(syncLog, "utf8")).trim()).toBe(`sync --claude-config-dir ${config} --json`);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("serializes concurrent refresh processes and automatically updates a version once", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-delegator-cli-auto-update-"));
+    temporaryDirectories.push(root);
+    const config = join(root, "claude");
+    const { globalBin, bunLog, syncLog, fakeBun } = await fakeUpdateToolchain(root);
+    const setup = await run(["setup", "--auto-update", "--claude-config-dir", config, "--json"]);
+    expect(setup.exitCode).toBe(0);
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => Response.json({ "dist-tags": { alpha: "0.1.0-alpha.999" } }),
+    });
+    const environment = {
+      ...process.env,
+      CLAUDE_CONFIG_DIR: config,
+      AGENT_DELEGATOR_UPDATE_REGISTRY_URL: server.url.toString(),
+      AGENT_DELEGATOR_BUN_COMMAND: fakeBun,
+      FAKE_BUN_LOG: bunLog,
+      FAKE_GLOBAL_BIN: globalBin,
+      FAKE_SYNC_LOG: syncLog,
+      FAKE_ADD_DELAY_MS: "100",
+    };
+    try {
+      const concurrent = await Promise.all([
+        run(["update-check", "--refresh", "--json"], environment),
+        run(["update-check", "--refresh", "--json"], environment),
+      ]);
+      expect(concurrent.every((result) => result.exitCode === 0)).toBe(true);
+      expect(concurrent.map((result) => JSON.parse(result.stdout).status).sort()).toEqual(["busy", "checked"]);
+      const updatedState = JSON.parse(
+        await readFile(join(config, "agent-delegator", "update-state.json"), "utf8"),
+      );
+      expect(updatedState.attempts["0.1.0-alpha.999"]).toMatchObject({ status: "succeeded", error: null });
+      expect(updatedState.lastCheck).toMatchObject({ currentVersion: "0.1.0-alpha.999", updateAvailable: false });
+
+      const later = await run(["update-check", "--refresh", "--json"], environment);
+      expect(later.exitCode).toBe(0);
+      expect((await readFile(bunLog, "utf8")).trim().split("\n")).toEqual([
+        "add --global @whatasoda/agent-delegator@0.1.0-alpha.999",
+      ]);
+      expect((await readFile(syncLog, "utf8")).trim().split("\n")).toEqual([
+        `sync --claude-config-dir ${config} --json`,
+      ]);
+      const state = JSON.parse(await readFile(join(config, "agent-delegator", "update-state.json"), "utf8"));
+      expect(state.attempts["0.1.0-alpha.999"]).toMatchObject({ status: "succeeded", error: null });
     } finally {
       server.stop(true);
     }

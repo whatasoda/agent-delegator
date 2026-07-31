@@ -68,7 +68,7 @@ try {
 
   const consumer = join(temporaryRoot, "consumer");
   await mkdir(consumer);
-  await writeFile(join(consumer, "package.json"), '{"name":"package-smoke","private":true}\n');
+  await writeFile(join(consumer, "package.json"), '{"name":"package-smoke","private":true,"type":"module"}\n');
   await run([process.execPath, "add", "--offline", tarball], consumer);
 
   const fixture = join(temporaryRoot, "fixture");
@@ -96,6 +96,36 @@ if (resolved.method !== "explicit" || turns.length !== 2) process.exit(2);
 `,
   );
   await run([process.execPath, librarySmoke, transcript], consumer);
+  const libraryTypes = join(consumer, "library-types.ts");
+  await writeFile(
+    libraryTypes,
+    `import {
+  normalizeTranscriptDocumentFile,
+  resolveClaudeTranscript,
+  type NormalizedTranscript,
+  type ResolvedTranscript,
+  type ResolveTranscriptOptions,
+} from "@whatasoda/agent-delegator";
+const options: ResolveTranscriptOptions = { cwd: "/tmp", allowLatestFallback: false };
+const resolved: Promise<ResolvedTranscript> = resolveClaudeTranscript(options);
+const normalized: Promise<NormalizedTranscript> = normalizeTranscriptDocumentFile("transcript.jsonl");
+void [resolved, normalized];
+`,
+  );
+  await writeFile(
+    join(consumer, "tsconfig.json"),
+    JSON.stringify({
+      compilerOptions: {
+        target: "ESNext",
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        strict: true,
+        noEmit: true,
+      },
+      files: ["library-types.ts"],
+    }),
+  );
+  await run([join(packageRoot, "node_modules", ".bin", "tsc"), "-p", consumer], consumer);
   const fakeCodex = join(binDirectory, "codex");
   await writeFile(
     fakeCodex,
