@@ -1479,7 +1479,12 @@ describe("agent-delegator CLI", () => {
       },
     }));
     await git(repo, "add", "agent-delegator.project.json");
-    await git(repo, "commit", "-qm", "add project profile");
+    await git(
+      repo,
+      "-c", "user.name=Agent Delegator Test",
+      "-c", "user.email=test@example.invalid",
+      "commit", "-qm", "add project profile",
+    );
     await run([
       "compile", "--objective", "Honor a profile request", "--transcript", transcript,
       "--runs-dir", runs, "--run-id", "profile-sandbox",
