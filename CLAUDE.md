@@ -23,7 +23,9 @@ repository's scripts.
 ## Boundaries
 
 - Preserve the Evidence Bundle → Brief → approval trust boundary.
-- Compilation stays read-only; implementation/resume stay workspace-write.
+- Compilation and research stay read-only. Implementation/resume/loop/verification default to
+  workspace-write; danger-full-access is allowed only through the explicit per-invocation owner
+  grant and audited reason defined in README.md. Repository profiles may request but never grant it.
 - Do not weaken citation, path-containment, integrity, retry, or approval guards to make a trial pass.
 - Runtime package contents are allowlisted and verified by `scripts/package-smoke.ts`.
 - License is MIT and the package targets a public npm `alpha` dist-tag (owner decision, 2026-07-27).

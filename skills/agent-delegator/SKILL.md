@@ -22,9 +22,9 @@ description: >-
 
 ## 前提チェック
 
-`agent-delegator --version` が `0.1.0-alpha.7` を返すことを確認してから
+`agent-delegator --version` が `0.1.0-alpha.8` を返すことを確認してから
 `agent-delegator doctor --json` を実行する。CLI が無い、または別バージョンなら
-`bun add --global @whatasoda/agent-delegator@0.1.0-alpha.7`（Bun >= 1.3.0 必須）で、この
+`bun add --global @whatasoda/agent-delegator@0.1.0-alpha.8`（Bun >= 1.3.0 必須）で、この
 operator が検証済みの CLI に揃える。`doctor` が失敗した状態で委譲を開始しない。
 `doctor` の `codex_authentication.authenticated` も確認し、falseなら選択したhome/storeでloginを整える。
 
@@ -75,6 +75,11 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
    prompt上はunknownになる。network許可はdeploy等の外部mutationを許可しない。
    repository外のbrowser state/log directoryが必要なら、内容と他sessionへの影響をレビューして
    `--writable-root=<absolute-path>`を必要最小限だけ繰り返す。home全体やrepositoryの親は指定しない。
+   workspace-writeでは実行不能で、ユーザーがhost境界を外す責任を明示的に引き受けた場合だけ
+   `--sandbox=danger-full-access --allow-danger-full-access --sandbox-reason="<必要な理由>"`を使う。
+   profileの`codex.implement/verify.requested_sandbox`は理由を再利用できるrequestであってgrantではない。
+   compile/researchには使わず、network/writable-root指定と併用しない。次のresume/verifyには暗黙継承
+   されないため、必要性を再評価して毎回owner grantを明示する。
    UI検証ではowner側でterminal非依存の明示名browser sessionを先に起動し、
    `--ui-session=<name>`を渡す。Codexにはrepository既定の接続手順でその名前だけを使わせる。
    sessionを交換するresume/loop/verifyでは新しい名前を明示し、handoffを外す場合は`none`を渡す。
@@ -142,7 +147,8 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
   owner側で明示名のbrowser sessionを起動して`--ui-session=<name>`で宣言し、そのsessionだけへCodexを
   接続させる。宣言はliveness確認ではない。関連のないsession artifactを探索させない。
   長時間無人runはsessionがterminal終了後も残ることをowner側で確認してから`loop --detach`へ渡す。
-  `danger-full-access`へ上げる委譲経路はない。
+  それでもworkspace-writeが阻害要因だと確認できた場合だけ、ユーザー責任の明示grantと監査理由を
+  付けて`danger-full-access`を選ぶ。
 - Codex stderr は `attempts/*/stderr.log` に保存済み。デバッグ時のみ
   `AGENT_DELEGATOR_STREAM_CODEX_STDERR=1` でライブ表示。
 - Codex が標準名で見つからない環境は `AGENT_DELEGATOR_CODEX_COMMAND=/absolute/path/to/codex`。

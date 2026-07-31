@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.5 - 2026-07-31
+
+- Updated the exact core CLI compatibility preflight to `0.1.0-alpha.8`.
+- Added operator guidance for reviewed, per-invocation `danger-full-access` grants and
+  non-authoritative project-profile sandbox requests.
+
 ## 0.2.4 - 2026-07-31
 
 - Updated the exact core CLI compatibility preflight to `0.1.0-alpha.7`.

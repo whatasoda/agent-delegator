@@ -678,6 +678,26 @@ describe("agent-delegator CLI", () => {
     const clearedCalls = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]);
     expect(clearedCalls.at(-1)?.at(-1)).toContain("UI session handoff: none was declared");
 
+    const unsandboxed = await run(
+      [
+        "verify", "--run", "verification-flow", "--runs-dir", runs,
+        "--sandbox", "danger-full-access", "--allow-danger-full-access",
+        "--sandbox-reason", "Launch the repository-owned browser for smoke checks",
+      ],
+      repo,
+      env,
+    );
+    expect(unsandboxed.exitCode).toBe(0);
+    const unsandboxedCalls = (await readFile(log, "utf8")).trim().split("\n")
+      .map((line) => JSON.parse(line) as string[]);
+    expect(unsandboxedCalls.at(-1)).toContain("danger-full-access");
+    expect(unsandboxedCalls.at(-1)).not.toContain("sandbox_workspace_write.network_access=false");
+    const unsandboxedState = JSON.parse(await readFile(join(runs, "verification-flow", "state.json"), "utf8"));
+    expect(unsandboxedState).toMatchObject({
+      verificationSandboxMode: "danger-full-access",
+      verificationSandboxReason: "Launch the repository-owned browser for smoke checks",
+    });
+
     const changedNetwork = await run(
       ["verify", "--run", "verification-flow", "--runs-dir", runs, "--network-access", "enabled"],
       repo,
@@ -694,7 +714,7 @@ describe("agent-delegator CLI", () => {
     expect(mutated.exitCode).toBe(1);
     expect(mutated.stderr).toContain("worktree changed during delegated verification");
     const state = JSON.parse(await readFile(join(runs, "verification-flow", "state.json"), "utf8"));
-    expect(state).toMatchObject({ status: "completed", verificationStatus: null, verificationCount: 3 });
+    expect(state).toMatchObject({ status: "completed", verificationStatus: null, verificationCount: 4 });
     expect(state.verificationFailure).toContain("worktree changed during delegated verification");
   });
 
@@ -974,7 +994,7 @@ describe("agent-delegator CLI", () => {
       { ...env, FAKE_CODEX_IMPLEMENT_COMPLETED: "1", FAKE_CODEX_COMMIT: "1" },
     );
     expect(implementation.exitCode).toBe(1);
-    expect(implementation.stderr).toContain("Repository HEAD changed during workspace-write execution");
+    expect(implementation.stderr).toContain("Repository HEAD changed during delegated execution");
     const state = JSON.parse(await readFile(join(runs, "delegated-commit", "state.json"), "utf8"));
     expect(state).toMatchObject({ status: "failed", failurePhase: "implement" });
     const events = await readFile(join(runs, "delegated-commit", "run-events.jsonl"), "utf8");
@@ -1386,6 +1406,100 @@ describe("agent-delegator CLI", () => {
       "dashboard-smoke-1": 1,
       "dashboard-smoke-2": 1,
     });
+  });
+
+  test("requires an explicit owner grant and reason for danger-full-access, then resets on resume", async () => {
+    const { repo, runs, transcript, env, log } = await fixture();
+    await run([
+      "compile", "--objective", "Use an unsandboxed local browser", "--transcript", transcript,
+      "--runs-dir", runs, "--run-id", "danger-sandbox",
+    ], repo, env);
+    await run(["approve", "--run", "danger-sandbox", "--runs-dir", runs, "--allow-unresolved"], repo, env);
+
+    const missingGrant = await run([
+      "implement", "--run", "danger-sandbox", "--runs-dir", runs, "--sandbox", "danger-full-access",
+      "--sandbox-reason", "Launch local Chrome",
+    ], repo, env);
+    expect(missingGrant.exitCode).toBe(1);
+    expect(missingGrant.stderr).toContain("requires --allow-danger-full-access");
+
+    const missingReason = await run([
+      "implement", "--run", "danger-sandbox", "--runs-dir", runs, "--sandbox", "danger-full-access",
+      "--allow-danger-full-access",
+    ], repo, env);
+    expect(missingReason.exitCode).toBe(1);
+    expect(missingReason.stderr).toContain("requires --sandbox-reason");
+
+    const implemented = await run([
+      "implement", "--run", "danger-sandbox", "--runs-dir", runs,
+      "--sandbox=danger-full-access", "--allow-danger-full-access",
+      "--sandbox-reason=Launch local Chrome for smoke checks",
+    ], repo, env);
+    expect(implemented.exitCode).toBe(0);
+    expect(implemented.stderr).toContain("explicitly granted danger-full-access");
+    let calls = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]);
+    expect(calls.at(-1)).toContain("danger-full-access");
+    expect(calls.at(-1)?.at(-1)).toContain("No filesystem or command-network sandbox");
+    expect(calls.at(-1)?.at(-1)).toContain("Launch local Chrome for smoke checks");
+
+    const resumed = await run([
+      "resume", "--run", "danger-sandbox", "--runs-dir", runs, "--message", "Use the selected wording.",
+    ], repo, env);
+    expect(resumed.exitCode).toBe(0);
+    calls = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]);
+    expect(calls.at(-1)).toContain('sandbox_mode="workspace-write"');
+    const state = JSON.parse(await readFile(join(runs, "danger-sandbox", "state.json"), "utf8"));
+    expect(state).toMatchObject({ implementationSandboxMode: "workspace-write", implementationSandboxReason: null });
+    expect(state.implementationSandboxSelections.map((selection: { mode: string }) => selection.mode))
+      .toEqual(["danger-full-access", "workspace-write"]);
+    expect(state.implementationSandboxSelections.map((selection: { source: string }) => selection.source))
+      .toEqual(["explicit-owner", "default"]);
+    const started = (await readFile(join(runs, "danger-sandbox", "run-events.jsonl"), "utf8"))
+      .trim().split("\n").map((line) => JSON.parse(line))
+      .filter((event) => event.event === "started" && ["implement", "resume"].includes(event.stage));
+    expect(started.map((event) => event.metrics.sandbox_mode)).toEqual(["danger-full-access", "workspace-write"]);
+    const report = await run(["report", "--runs-dir", runs, "--format", "json"], repo, env);
+    expect(JSON.parse(report.stdout).breakdowns.implementation_sandbox_mode).toEqual({
+      "danger-full-access": 1,
+      "workspace-write": 1,
+    });
+  });
+
+  test("treats a project profile sandbox preference as a request, not a grant", async () => {
+    const { repo, runs, transcript, env, log } = await fixture();
+    await writeFile(join(repo, "agent-delegator.project.json"), JSON.stringify({
+      schema_version: "1",
+      default_sources: [],
+      topics: {},
+      codex: {
+        implement: {
+          requested_sandbox: "danger-full-access",
+          reason: "Attach to the repository-owned local browser",
+        },
+      },
+    }));
+    await git(repo, "add", "agent-delegator.project.json");
+    await git(repo, "commit", "-qm", "add project profile");
+    await run([
+      "compile", "--objective", "Honor a profile request", "--transcript", transcript,
+      "--runs-dir", runs, "--run-id", "profile-sandbox",
+    ], repo, env);
+    await run(["approve", "--run", "profile-sandbox", "--runs-dir", runs, "--allow-unresolved"], repo, env);
+
+    const defaulted = await run(["implement", "--run", "profile-sandbox", "--runs-dir", runs], repo, env);
+    expect(defaulted.exitCode).toBe(0);
+    expect(defaulted.stderr).toContain("a profile cannot grant it; using workspace-write");
+    let calls = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]);
+    expect(calls.at(-1)).toContain("workspace-write");
+
+    const granted = await run([
+      "resume", "--run", "profile-sandbox", "--runs-dir", runs, "--message", "Proceed with the local check.",
+      "--sandbox", "danger-full-access", "--allow-danger-full-access",
+    ], repo, env);
+    expect(granted.exitCode).toBe(0);
+    expect(granted.stderr).toContain("Attach to the repository-owned local browser");
+    calls = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]);
+    expect(calls.at(-1)).toContain('sandbox_mode="danger-full-access"');
   });
 
   test("rejects broad, relative, and missing writable roots before Codex execution", async () => {

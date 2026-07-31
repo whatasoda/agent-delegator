@@ -22,6 +22,15 @@ export type RunStatus =
   | "blocked"
   | "failed";
 
+export type DelegatedSandboxMode = "workspace-write" | "danger-full-access";
+
+export interface SandboxSelectionRecord {
+  mode: DelegatedSandboxMode;
+  reason: string | null;
+  selected_at: string;
+  source: "default" | "explicit-owner";
+}
+
 export interface RunState {
   schemaVersion: 1;
   runId: string;
@@ -76,6 +85,9 @@ export interface RunState {
   workspaceWriteWritableRoots?: string[];
   workspaceWriteUiSession?: string | null;
   workspaceWriteUiSessions?: string[];
+  implementationSandboxMode?: DelegatedSandboxMode;
+  implementationSandboxReason?: string | null;
+  implementationSandboxSelections?: SandboxSelectionRecord[];
   verificationModel?: string | null;
   verificationSessionId?: string | null;
   verificationCount?: number;
@@ -86,6 +98,9 @@ export interface RunState {
   verificationWritableRoots?: string[];
   verificationUiSession?: string | null;
   verificationUiSessions?: string[];
+  verificationSandboxMode?: DelegatedSandboxMode;
+  verificationSandboxReason?: string | null;
+  verificationSandboxSelections?: SandboxSelectionRecord[];
 }
 
 export function observedRunModels(state: RunState): {
@@ -211,10 +226,16 @@ export async function writeRunState(runDir: string, state: RunState): Promise<vo
       writable_roots: state.workspaceWriteWritableRoots ?? [],
       ui_session: state.workspaceWriteUiSession ?? null,
       ui_sessions: state.workspaceWriteUiSessions ?? [],
+      sandbox_mode: state.implementationSandboxMode ?? "workspace-write",
+      sandbox_reason: state.implementationSandboxReason ?? null,
+      sandbox_selections: state.implementationSandboxSelections ?? [],
       verification_network_access: state.verificationNetworkAccess ?? null,
       verification_writable_roots: state.verificationWritableRoots ?? [],
       verification_ui_session: state.verificationUiSession ?? null,
       verification_ui_sessions: state.verificationUiSessions ?? [],
+      verification_sandbox_mode: state.verificationSandboxMode ?? null,
+      verification_sandbox_reason: state.verificationSandboxReason ?? null,
+      verification_sandbox_selections: state.verificationSandboxSelections ?? [],
     },
     evaluation,
   });

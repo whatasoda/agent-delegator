@@ -46,10 +46,16 @@ export interface RunHistoryEntry {
     writable_roots?: string[];
     ui_session?: string | null;
     ui_sessions?: string[];
+    sandbox_mode?: string;
+    sandbox_reason?: string | null;
+    sandbox_selections?: Array<{ mode: string; reason: string | null; selected_at: string; source: string }>;
     verification_network_access?: string | null;
     verification_writable_roots?: string[];
     verification_ui_session?: string | null;
     verification_ui_sessions?: string[];
+    verification_sandbox_mode?: string | null;
+    verification_sandbox_reason?: string | null;
+    verification_sandbox_selections?: Array<{ mode: string; reason: string | null; selected_at: string; source: string }>;
   };
   evaluation?: {
     recorded_at: string;

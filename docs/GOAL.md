@@ -233,6 +233,11 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
   探索させず、terminal非依存sessionを `loop --detach` の前に起動する無人運転を手順化。
   project profileからのdanger-full-accessはrepository contentによるhost境界解除になるため引き続き不採用。
   （2026-07-31 done）
+- [x] P5-26: 明示sandbox選択 — implement/resume/loop/verifyにper-invocationの
+  `danger-full-access` opt-inを追加。owner確認flagと監査理由を必須にし、無指定の次回operationでは
+  workspace-writeへ戻す。project profileは実装・verify別のrequestと理由を保持できるがgrantはできない。
+  selection/reason/historyをprompt、state、run event、machine history、reportに記録し、compile/researchの
+  read-only境界は維持。（2026-07-31 done）
 
 ### Trial — 実業務リポジトリ検証
 

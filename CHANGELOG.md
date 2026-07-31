@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## [0.1.0-alpha.8] - 2026-07-31
+
+### Added
+
+- Added per-invocation, explicitly acknowledged `danger-full-access` for implementation,
+  autonomous loops, resume, and independent verification, with a required audited reason.
+- Added evidence-bound project-profile sandbox requests that can supply convention and rationale
+  without granting host access.
+
+### Changed
+
+- Record implementation and verification sandbox selections separately in prompts, state,
+  per-attempt events, machine history, and report breakdowns.
+- Restore `workspace-write` on later operations unless the invoking owner repeats the grant;
+  compile and research remain read-only.
+
 ## [0.1.0-alpha.7] - 2026-07-31
 
 ### Added

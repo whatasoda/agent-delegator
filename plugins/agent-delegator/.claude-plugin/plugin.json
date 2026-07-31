@@ -1,6 +1,6 @@
 {
   "name": "agent-delegator",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Delegate observable implementation, verification, autonomous improvement, and read-only research from Claude Code to Codex",
   "author": {
     "name": "whatasoda"

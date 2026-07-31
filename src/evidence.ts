@@ -77,6 +77,15 @@ export interface ProjectProfile {
   schema_version: "1";
   default_sources: RepositorySourceRequest[];
   topics: Record<string, { sources: RepositorySourceRequest[] }>;
+  codex?: {
+    implement?: ProjectSandboxRequest;
+    verify?: ProjectSandboxRequest;
+  };
+}
+
+export interface ProjectSandboxRequest {
+  requested_sandbox: "workspace-write" | "danger-full-access";
+  reason: string;
 }
 
 export interface EvidenceSource {

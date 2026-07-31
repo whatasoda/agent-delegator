@@ -7,6 +7,14 @@
   "properties": {
     "$schema": { "type": "string" },
     "schema_version": { "const": "1" },
+    "codex": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "implement": { "$ref": "#/$defs/sandbox_request" },
+        "verify": { "$ref": "#/$defs/sandbox_request" }
+      }
+    },
     "default_sources": {
       "type": "array",
       "items": { "$ref": "context-request.schema.json#/$defs/repo_source" }
@@ -23,6 +31,17 @@
             "items": { "$ref": "context-request.schema.json#/$defs/repo_source" }
           }
         }
+      }
+    }
+  },
+  "$defs": {
+    "sandbox_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested_sandbox", "reason"],
+      "properties": {
+        "requested_sandbox": { "type": "string", "enum": ["workspace-write", "danger-full-access"] },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 500, "pattern": "^[^\\u0000-\\u001f\\u007f]+$" }
       }
     }
   }

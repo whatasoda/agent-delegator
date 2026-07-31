@@ -43,6 +43,8 @@ export interface RunEvent {
     worktree_changed?: boolean;
     execution_backend?: "process" | "herdr";
     headless_job_id?: string;
+    sandbox_mode?: "workspace-write" | "danger-full-access";
+    sandbox_reason?: string | null;
   };
   artifacts: string[];
 }
@@ -318,10 +320,16 @@ export interface RunObservationSummary {
     writable_roots: string[];
     ui_session: string | null;
     ui_sessions: string[];
+    sandbox_mode: string;
+    sandbox_reason: string | null;
+    sandbox_selections: RunState["implementationSandboxSelections"];
     verification_network_access: string | null;
     verification_writable_roots: string[];
     verification_ui_session: string | null;
     verification_ui_sessions: string[];
+    verification_sandbox_mode: string | null;
+    verification_sandbox_reason: string | null;
+    verification_sandbox_selections: RunState["verificationSandboxSelections"];
   };
   detached_execution: { jobs: number; backends: string[]; job_ids: string[] };
   metadata: TaskMetadata;
@@ -418,10 +426,16 @@ export async function buildRunObservation(runDir: string): Promise<RunObservatio
       writable_roots: state.workspaceWriteWritableRoots ?? [],
       ui_session: state.workspaceWriteUiSession ?? null,
       ui_sessions: state.workspaceWriteUiSessions ?? [],
+      sandbox_mode: state.implementationSandboxMode ?? "workspace-write",
+      sandbox_reason: state.implementationSandboxReason ?? null,
+      sandbox_selections: state.implementationSandboxSelections ?? [],
       verification_network_access: state.verificationNetworkAccess ?? null,
       verification_writable_roots: state.verificationWritableRoots ?? [],
       verification_ui_session: state.verificationUiSession ?? null,
       verification_ui_sessions: state.verificationUiSessions ?? [],
+      verification_sandbox_mode: state.verificationSandboxMode ?? null,
+      verification_sandbox_reason: state.verificationSandboxReason ?? null,
+      verification_sandbox_selections: state.verificationSandboxSelections ?? [],
     },
     detached_execution: {
       jobs: new Set(events.flatMap((event) => event.metrics.headless_job_id ? [event.metrics.headless_job_id] : [])).size,
@@ -552,9 +566,11 @@ export interface ObservationReport {
     codex_home_mode: Record<string, number>;
     codex_auth_store: Record<string, number>;
     workspace_write_network_access: Record<string, number>;
+    implementation_sandbox_mode: Record<string, number>;
     workspace_write_writable_root: Record<string, number>;
     implementation_ui_session_handoff: Record<string, number>;
     verification_network_access: Record<string, number>;
+    verification_sandbox_mode: Record<string, number>;
     verification_writable_root: Record<string, number>;
     verification_ui_session_handoff: Record<string, number>;
     execution_backend: Record<string, number>;
@@ -697,9 +713,9 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
     implementation_quality: {}, communication_quality: {}, failure_category: {}, compiler_model: {},
     failure_phase: {},
     implementation_model: {}, research_model: {}, verification_model: {}, verification_status: {},
-    codex_home_mode: {}, codex_auth_store: {}, workspace_write_network_access: {},
+    codex_home_mode: {}, codex_auth_store: {}, workspace_write_network_access: {}, implementation_sandbox_mode: {},
     workspace_write_writable_root: {}, implementation_ui_session_handoff: {},
-    verification_network_access: {}, verification_writable_root: {}, verification_ui_session_handoff: {},
+    verification_network_access: {}, verification_sandbox_mode: {}, verification_writable_root: {}, verification_ui_session_handoff: {},
     execution_backend: {},
     delegation_pattern: {}, experiment_variant: {},
     autonomous_stop_reason: {}, delegator_revision: {},
@@ -717,6 +733,11 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
     increment(breakdowns.codex_home_mode, run.codex_environment.mode);
     increment(breakdowns.codex_auth_store, run.codex_environment.auth_store);
     increment(breakdowns.workspace_write_network_access, run.codex_environment.network_access);
+    const implementationSandboxModes = new Set<string>(
+      run.codex_environment.sandbox_selections?.map((selection) => selection.mode) ?? [],
+    );
+    if (!implementationSandboxModes.size) implementationSandboxModes.add(run.codex_environment.sandbox_mode);
+    for (const mode of implementationSandboxModes) increment(breakdowns.implementation_sandbox_mode, mode);
     if (run.codex_environment.writable_roots.length) {
       for (const root of run.codex_environment.writable_roots) increment(breakdowns.workspace_write_writable_root, root);
     } else {
@@ -730,6 +751,13 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
       increment(breakdowns.implementation_ui_session_handoff, "none-declared");
     }
     if (run.attempts.verify !== undefined) {
+      const verificationSandboxModes = new Set<string>(
+        run.codex_environment.verification_sandbox_selections?.map((selection) => selection.mode) ?? [],
+      );
+      if (!verificationSandboxModes.size) {
+        verificationSandboxModes.add(run.codex_environment.verification_sandbox_mode ?? "workspace-write");
+      }
+      for (const mode of verificationSandboxModes) increment(breakdowns.verification_sandbox_mode, mode);
       increment(breakdowns.verification_network_access, run.codex_environment.verification_network_access);
       if (run.codex_environment.verification_writable_roots.length) {
         for (const root of run.codex_environment.verification_writable_roots) {
@@ -919,6 +947,10 @@ ${breakdownRows(report.breakdowns.codex_auth_store)}
 | --- | ---: |
 ${breakdownRows(report.breakdowns.workspace_write_network_access)}
 
+| Implementation sandbox | Runs |
+| --- | ---: |
+${breakdownRows(report.breakdowns.implementation_sandbox_mode)}
+
 | Implementation extra writable root | Runs |
 | --- | ---: |
 ${breakdownRows(report.breakdowns.workspace_write_writable_root)}
@@ -930,6 +962,10 @@ ${breakdownRows(report.breakdowns.implementation_ui_session_handoff)}
 | Verification network | Runs |
 | --- | ---: |
 ${breakdownRows(report.breakdowns.verification_network_access)}
+
+| Verification sandbox | Runs |
+| --- | ---: |
+${breakdownRows(report.breakdowns.verification_sandbox_mode)}
 
 | Verification extra writable root | Runs |
 | --- | ---: |

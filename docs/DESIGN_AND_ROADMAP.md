@@ -292,11 +292,14 @@ sessionで別の固定policyとしてstate/history/reportへ残す。repository�
 権限を自動拡張しない。永続defaultが必要ならtrusted projectの `.codex/config.toml`、正確なrun監査が
 必要ならCLI optionを使い分ける。
 
-`danger-full-access` は既存のworkspace-write境界と衝突するため委譲optionにしない。UI検証ではbrowser
-processの起動をowner prerequisite、既存の明示sessionへの接続・操作・判定をCodexの担当として分ける。
+`danger-full-access` は既定値やrepository由来のgrantにはしない。一方、利用者がhost境界を外す責任を
+明示的に引き受けるoperationでは、sandbox選択・確認flag・監査理由の3点を揃えたCLI opt-inを許す。
+grantは1 commandだけに適用し、次のresume/verifyはworkspace-writeへ戻す。loop内のturnには同じ起動時の
+明示grantを引き継ぐ。profileはsandboxと理由をrequestできるが、owner CLI flagなしではgrantしない。
+UI検証ではまずbrowser processの起動をowner prerequisite、既存の明示sessionへの接続・操作・判定をCodexの担当として分ける。
 起動失敗をproxy停止と推測したり、sudo/no-sandbox/daemon再起動へ誘導しないことをprompt contractにする。
-trusted projectのCodex configが別sandboxを宣言してもdelegatorの明示modeを優先し、repository contentだけで
-非対話runのhost境界を外さない。
+trusted projectのCodex configが別sandboxを宣言してもdelegatorの明示modeを優先し、repository contentや
+environmentだけで非対話runのhost境界を外さない。compile/researchは常にread-onlyとする。
 
 owner prerequisiteを無人loopでも使えるよう、UI session名は `--ui-session` で明示する。現在のhandoffと
 過去に宣言した全sessionを実装・独立verify別に保持し、prompt/state/history/reportへ投影する。名前の宣言は

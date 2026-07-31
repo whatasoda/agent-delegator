@@ -50,7 +50,9 @@
         "exit_code": { "type": "integer" },
         "worktree_changed": { "type": "boolean" },
         "execution_backend": { "type": "string", "enum": ["process", "herdr"] },
-        "headless_job_id": { "type": "string", "minLength": 1 }
+        "headless_job_id": { "type": "string", "minLength": 1 },
+        "sandbox_mode": { "type": "string", "enum": ["workspace-write", "danger-full-access"] },
+        "sandbox_reason": { "type": ["string", "null"], "maxLength": 500 }
       }
     },
     "artifacts": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }

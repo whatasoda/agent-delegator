@@ -52,11 +52,11 @@ directories are repository-local working state, not durable archives.
 ### Claude Code plugin
 
 The separately versioned thin plugin distributes the operator skill without bundling another CLI.
-Plugin `0.2.4` is verified with core CLI `0.1.0-alpha.7`; install that exact CLI version, then add
+Plugin `0.2.5` is verified with core CLI `0.1.0-alpha.8`; install that exact CLI version, then add
 this public repository as a marketplace:
 
 ```sh
-bun add --global @whatasoda/agent-delegator@0.1.0-alpha.7
+bun add --global @whatasoda/agent-delegator@0.1.0-alpha.8
 claude plugin marketplace add whatasoda/agent-delegator
 claude plugin install agent-delegator@whatasoda-agent-delegator --scope user
 ```
@@ -67,7 +67,7 @@ Run `/reload-plugins` in an existing Claude Code session, then invoke
 ```sh
 claude plugin marketplace update whatasoda-agent-delegator
 claude plugin update agent-delegator@whatasoda-agent-delegator --scope user
-bun add --global @whatasoda/agent-delegator@0.1.0-alpha.7
+bun add --global @whatasoda/agent-delegator@0.1.0-alpha.8
 ```
 
 The plugin checks the exact CLI version and runs `agent-delegator doctor --json` before delegation.
@@ -247,11 +247,40 @@ which project/user layers were effective. Use `--writable-root` when exact per-r
 later auditability matter. `agent-delegator.project.json` remains evidence-routing policy and does
 not automatically grant host filesystem access from repository content.
 
-The sandbox mode remains `workspace-write`; agent-delegator intentionally has no
-`danger-full-access` delegation switch. On macOS this can prevent launching Chrome even after
-network and writable roots are granted. A trusted project's `.codex/config.toml` can contain a
-different `sandbox_mode`, but the delegator's explicit CLI mode preserves this invariant. Repository
-content must not silently remove the host boundary for a non-interactive or detached run.
+The default sandbox remains `workspace-write`. For a trusted operation whose local checks truly
+need the host boundary removed, `implement`, `resume`, `loop`, and `verify` accept the
+deliberately redundant combination
+`--sandbox=danger-full-access --allow-danger-full-access --sandbox-reason="<why>"`. The grant
+applies only to that command invocation; a later resume or verification returns to
+`workspace-write` unless the owner repeats the grant. A detached `loop` carries the explicit
+selection across the turns launched by that one command.
+
+`danger-full-access` removes the technical filesystem and command-network boundary. It does not
+authorize repository escape, credential inspection, deploys, uploads, releases, or other external
+mutation. Workspace-write network/root options cannot accompany it because that would imply a
+boundary Codex is not enforcing. Compile and research always remain read-only. Agent-delegator
+never reads a danger grant from an environment variable or inherited Codex configuration.
+
+A reviewed `agent-delegator.project.json` may request a sandbox and provide its reason:
+
+```json
+{
+  "schema_version": "1",
+  "default_sources": [],
+  "topics": {},
+  "codex": {
+    "verify": {
+      "requested_sandbox": "danger-full-access",
+      "reason": "Launch the repository-owned local browser for smoke checks"
+    }
+  }
+}
+```
+
+The profile is evidence-bound and makes a project convention reusable, but repository content
+cannot grant unsandboxed execution. Without both owner CLI flags, the request is reported and the
+operation uses `workspace-write`. The current selection, reason, selection history, per-attempt
+event, machine history, and report breakdown are retained for later evaluation.
 
 For UI verification, have Claude start an explicitly named browser session, then pass
 `--ui-session=<name>` to `implement`, `resume`, `loop`, or `verify`. The name is validated, printed,
@@ -637,7 +666,8 @@ cost because model pricing and billing semantics are external and time-dependent
 - Implementation refuses to start when repository HEAD or dirty-worktree contents changed after
   approval unless the caller explicitly acknowledges the reviewed change with
   `--allow-base-change` or `--allow-worktree-change`.
-- Implementation and resume run in `workspace-write`; neither receives an automatic bypass flag.
+- Implementation, resume, loop, and verification default to `workspace-write`; danger-full-access
+  requires a per-invocation owner flag pair and an audited reason.
 - Resume re-verifies approval, the Evidence Bundle, and Git HEAD before sending a decision.
 - Prompts forbid commits, pushes, PR creation, deploys, and external mutations.
 - Unresolved Brief items block approval by default.
@@ -647,6 +677,8 @@ The local hashes and `approvedBy` metadata are workflow consistency controls, no
 a defense against a hostile writer who can replace every file in the run directory. Redaction is
 best-effort credential-shape filtering, not DLP. `workspace-write` constrains filesystem writes but
 does not turn prompt instructions into an absolute external-mutation security boundary.
+`danger-full-access` removes even that technical host boundary, so its remaining restrictions are
+behavioral contracts and operator review controls.
 
 ## Failure and resume operations
 
