@@ -15,8 +15,8 @@ For a zero-edit prompt that derives each target from the current Claude session,
 [`examples/claude-validation-prompt.md`](./examples/claude-validation-prompt.md).
 
 The rationale behind the architecture, settled trade-offs, gap to the intended end state, and
-roadmap are maintained in [`docs/DESIGN_AND_ROADMAP.md`](./docs/DESIGN_AND_ROADMAP.md). The staged
-core-package, Claude-plugin, and standalone release plan is in
+roadmap are maintained in [`docs/DESIGN_AND_ROADMAP.md`](./docs/DESIGN_AND_ROADMAP.md). The CLI,
+library, managed-skill, and standalone release boundaries are in
 [`docs/DISTRIBUTION.md`](./docs/DISTRIBUTION.md).
 
 ## Installation
@@ -25,7 +25,8 @@ The package is MIT-licensed prerelease software, published to the npm `alpha` di
 
 ```sh
 bun add --global @whatasoda/agent-delegator@alpha
-agent-delegator --version
+agent-delegator setup
+agent-delegator doctor --json
 ```
 
 Alternatively, build and inspect a versioned tarball from a clean checkout, then install that
@@ -36,7 +37,7 @@ bun install --frozen-lockfile
 bun run package:smoke
 bun pm pack --destination /absolute/private/release-directory
 bun add --global /absolute/private/release-directory/whatasoda-agent-delegator-<version>.tgz
-agent-delegator --help
+agent-delegator setup
 ```
 
 macOS arm64 with Bun 1.3.13 is the currently validated distribution target. Other platforms remain
@@ -49,29 +50,62 @@ and approval schema version 3.
 During the alpha series these schemas may change between versions without a migration path; run
 directories are repository-local working state, not durable archives.
 
-### Claude Code plugin
+### Claude Code skill setup and updates
 
-The separately versioned thin plugin distributes the operator skill without bundling another CLI.
-Plugin `0.2.6` is verified with core CLI `0.1.0-alpha.9`; install that exact CLI version, then add
-this public repository as a marketplace:
-
-```sh
-bun add --global @whatasoda/agent-delegator@0.1.0-alpha.9
-claude plugin marketplace add whatasoda/agent-delegator
-claude plugin install agent-delegator@whatasoda-agent-delegator --scope user
-```
-
-Run `/reload-plugins` in an existing Claude Code session, then invoke
-`/agent-delegator:delegate-codex` or describe a matching delegation task. Update the two independently:
+Claude Code plugin/marketplace distribution is not used. `setup` writes the operator skill embedded
+in the installed CLI to `${CLAUDE_CONFIG_DIR:-~/.claude}/skills/agent-delegator/SKILL.md`, matching
+Claude Code's [personal skill location](https://code.claude.com/docs/en/skills#where-skills-live).
+It refuses to replace an unmanaged file unless `--force` is explicitly supplied.
 
 ```sh
-claude plugin marketplace update whatasoda-agent-delegator
-claude plugin update agent-delegator@whatasoda-agent-delegator --scope user
-bun add --global @whatasoda/agent-delegator@0.1.0-alpha.9
+agent-delegator setup
+agent-delegator sync
 ```
 
-The plugin checks the exact CLI version and runs `agent-delegator doctor --json` before delegation.
-Target-repository profiles remain in their target repositories and are never embedded in the plugin.
+`sync` is idempotent and only refreshes managed skill files from the running CLI. The skill asks the
+CLI for cached update status whenever Claude loads it. That request immediately returns the previous
+result and starts the next registry check in a detached process, so network latency never blocks
+skill loading. A newer cached version is reported on the next invocation.
+
+Use the integrated updater to update the global package and then run `sync` through the newly
+installed executable:
+
+```sh
+agent-delegator update
+```
+
+Automatic updates are opt-in. The updater records an attempt before starting it, so a registry
+version is automatically processed at most once even when that attempt fails. A later manual
+`agent-delegator update` remains available for recovery.
+
+```sh
+agent-delegator setup --auto-update
+agent-delegator setup --no-auto-update
+```
+
+Target-repository profiles remain in their target repositories and are never embedded in the
+personal skill.
+
+### Programmatic API
+
+The package root exports the Claude-to-agent handoff utilities used by the CLI without executing the
+CLI entrypoint. The initial supported surface covers transcript discovery, normalization, structured
+`AskUserQuestion` decisions, secret redaction, and evidence rendering:
+
+```ts
+import {
+  normalizeTranscriptDocumentFile,
+  renderTranscriptEvidence,
+  resolveClaudeTranscript,
+} from "@whatasoda/agent-delegator";
+
+const transcript = await resolveClaudeTranscript({ cwd: process.cwd() });
+const normalized = await normalizeTranscriptDocumentFile(transcript.path);
+const evidence = renderTranscriptEvidence(normalized.turns, normalized.decisions);
+```
+
+The runtime API is bundled as ESM with declarations in the npm package. It does not require importing
+the CLI bundle or spawning a subprocess.
 
 ## Pipeline
 

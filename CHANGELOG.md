@@ -8,9 +8,16 @@
   design/orchestration/review phase attribution.
 - Added Claude/Codex fresh and processed token shares, actual implementation-size cohorts, and
   Claude fresh-token density per patch KiB and changed file to JSON and Markdown reports.
+- Added a typed ESM library surface for Claude transcript discovery, normalization, structured
+  decisions, secret redaction, and evidence rendering.
+- Added CLI-managed `setup`, `sync`, and `update` flows for the embedded Claude personal skill.
+- Added non-blocking cached update checks and opt-in automatic updates with one persistent attempt
+  per target version.
 
 ### Changed
 
+- Replaced the separately versioned Claude Code plugin and marketplace with a single npm package
+  version for the CLI, library, and managed skill.
 - Document that offload share must be interpreted with size-normalized Claude usage, quality gates,
   and preferably a Claude-only baseline rather than claimed as causal savings by itself.
 
