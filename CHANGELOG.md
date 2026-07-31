@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.1.0-alpha.12] - 2026-07-31
+
+### Fixed
+
+- Preserved the managed Claude skill as raw Markdown during CLI bundling so its YAML frontmatter
+  remains valid, and added release smoke coverage that rejects rendered HTML skill output.
+
 ## [0.1.0-alpha.11] - 2026-07-31
 
 ### Fixed

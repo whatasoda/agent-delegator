@@ -43,7 +43,7 @@ describe("Claude skill distribution", () => {
     const path = claudeSkillPath(config);
     await mkdir(join(config, "skills", "agent-delegator"), { recursive: true });
     await writeFile(path, "personal instructions\n");
-    const content = `${managedSkillMarker}\nmanaged\n`;
+    const content = `---\nname: agent-delegator\n---\n${managedSkillMarker}\nmanaged\n`;
 
     await expect(syncClaudeSkill({ claudeConfigDir: config, content })).rejects.toThrow("unmanaged skill");
     await expect(syncClaudeSkill({ claudeConfigDir: config, content, force: true }))
@@ -52,8 +52,19 @@ describe("Claude skill distribution", () => {
 
   test("rejects embedded content without the managed marker", async () => {
     const config = await temporaryClaudeConfig();
-    await expect(syncClaudeSkill({ claudeConfigDir: config, content: "unmanaged\n" }))
+    await expect(syncClaudeSkill({
+      claudeConfigDir: config,
+      content: "---\nname: agent-delegator\n---\nunmanaged\n",
+    }))
       .rejects.toThrow("missing its managed-file marker");
+  });
+
+  test("rejects rendered HTML in place of Markdown skill frontmatter", async () => {
+    const config = await temporaryClaudeConfig();
+    await expect(syncClaudeSkill({
+      claudeConfigDir: config,
+      content: `<hr /><h2>name: agent-delegator</h2>${managedSkillMarker}`,
+    })).rejects.toThrow("missing its Markdown frontmatter");
   });
 });
 
