@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- Made implementation and iteration output schemas strict-compatible by requiring the
+  `commit_message` placeholder, restoring implement, resume, and autonomous loop calls on Codex
+  clients that reject optional structured-output properties.
+
 ## [0.1.0-alpha.10] - 2026-07-31
 
 ### Added

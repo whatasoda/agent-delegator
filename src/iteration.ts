@@ -11,7 +11,7 @@ export interface IterationResult {
   verification: { command: string; status: "passed" | "failed" | "not-run"; details: string }[];
   remaining_risks: string[];
   question: string;
-  commit_message?: string;
+  commit_message: string;
 }
 
 const validateSchema = new Ajv2020({ allErrors: true }).compile<IterationResult>(schema);
@@ -44,6 +44,6 @@ export function iterationAsImplementationResult(value: IterationResult): Impleme
     verification: value.verification,
     remaining_risks: value.remaining_risks,
     question: value.question,
-    ...(value.commit_message === undefined ? {} : { commit_message: value.commit_message }),
+    commit_message: value.commit_message,
   };
 }

@@ -19,8 +19,9 @@ operational obstacle that Claude cannot answer as a design decision. Do not rede
 You may make local implementation decisions marked MAY or required to fit existing code. Implement
 the change, add or update tests, and run the verification requested by the brief. Do not commit or
 modify Git metadata yourself. The task prompt says whether the agent-delegator controller may make
-a local commit after validating your result and checkpoint. When enabled, provide a concise,
-repository-appropriate `commit_message`; it is advisory and does not authorize Git operations.
+a local commit after validating your result and checkpoint. Always include `commit_message`: when
+enabled, provide a concise repository-appropriate suggestion; otherwise use an empty string. It is
+advisory and does not authorize Git operations.
 Never push, create a PR, deploy, or modify external state. Your final response must match the
 supplied result schema.
 

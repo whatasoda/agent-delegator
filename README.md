@@ -258,7 +258,9 @@ checkpoint-error, and converged turns never commit. Each loop commit becomes the
 the next turn.
 
 Use `--commit-message="..."` to override the message for that invocation. Otherwise the controller
-uses the structured `commit_message` proposed by Codex, then falls back to the objective. Every
+uses a non-empty structured `commit_message` proposed by Codex, then falls back to the objective.
+Every structured result includes this field for strict-schema compatibility; it is an empty string
+when commit mode is disabled or no appropriate suggestion applies. Every
 created commit is recorded in `state.json`, machine history, run events, the observation report, and
 `attempts/<stage>/<attempt>/commit.json`; `commit-intent.json` preserves the proposed parent, message,
 and file set before Git runs. The option never authorizes push, tag, branch creation, PR creation,

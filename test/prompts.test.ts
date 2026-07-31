@@ -30,6 +30,8 @@ describe("delegation prompts", () => {
     expect(normalized).toContain("Do not broaden scope, revise a MUST, invent product behavior");
     expect(normalized).toContain("Return `converged` when no further meaningful in-scope change is justified");
     expect(normalized).toContain("Do not commit or modify Git metadata yourself");
+    expect(normalized).toContain("Always include `commit_message`");
+    expect(normalized).toContain("otherwise use an empty string");
     expect(normalized).toContain("Never push, create or merge a PR, deploy");
   });
 
@@ -49,6 +51,7 @@ describe("delegation prompts", () => {
     expect(compiler).toContain("do not normalize or reconstruct it");
     expect(compiler).toContain("Never present an unresolved URL, path, identifier");
     expect(implementer).toContain("Record an unavailable owner-only check as `not-run`");
+    expect(implementer).toContain("Always include `commit_message`");
     expect(implementer).toContain("do not return `blocked` solely because");
     expect(iterator).toContain("network-dependent checks as `not-run`");
     expect(verifier).toContain("read the repository's durable instructions");
