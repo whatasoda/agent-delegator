@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.1.0-alpha.11] - 2026-07-31
+
 ### Fixed
 
 - Made implementation and iteration output schemas strict-compatible by requiring the
