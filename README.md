@@ -52,11 +52,11 @@ directories are repository-local working state, not durable archives.
 ### Claude Code plugin
 
 The separately versioned thin plugin distributes the operator skill without bundling another CLI.
-Plugin `0.2.5` is verified with core CLI `0.1.0-alpha.8`; install that exact CLI version, then add
+Plugin `0.2.6` is verified with core CLI `0.1.0-alpha.9`; install that exact CLI version, then add
 this public repository as a marketplace:
 
 ```sh
-bun add --global @whatasoda/agent-delegator@0.1.0-alpha.8
+bun add --global @whatasoda/agent-delegator@0.1.0-alpha.9
 claude plugin marketplace add whatasoda/agent-delegator
 claude plugin install agent-delegator@whatasoda-agent-delegator --scope user
 ```
@@ -67,7 +67,7 @@ Run `/reload-plugins` in an existing Claude Code session, then invoke
 ```sh
 claude plugin marketplace update whatasoda-agent-delegator
 claude plugin update agent-delegator@whatasoda-agent-delegator --scope user
-bun add --global @whatasoda/agent-delegator@0.1.0-alpha.8
+bun add --global @whatasoda/agent-delegator@0.1.0-alpha.9
 ```
 
 The plugin checks the exact CLI version and runs `agent-delegator doctor --json` before delegation.
@@ -198,8 +198,39 @@ Each iteration writes `attempts/iterate/<turn>/` artifacts and a canonical `iter
 The latest invocation summary is `loop.json`, while append-only `loop-history.jsonl` preserves
 convergence, escalation, turn/time-limit, and checkpoint-error stops across repeated invocations.
 Decision requests are also converted to the standard `result.json`, so Claude can answer them with
-the existing `resume` command. Codex still may not commit, push, open or merge a PR, deploy, or
-mutate external systems; Claude owns final diff review, verification, evaluation, and integration.
+the existing `resume` command. Codex itself still may not modify Git metadata, push, open or merge a
+PR, deploy, or mutate external systems. Claude owns final review, verification, evaluation, and
+integration.
+
+### Validated local commits
+
+`implement`, `resume`, and `loop` default to `--commit=never`. On a dedicated branch or worktree,
+the invoking owner can opt into local controller commits:
+
+```sh
+agent-delegator loop \
+  --run <run-id> \
+  --max-turns=12 \
+  --max-minutes=180 \
+  --commit=on-success
+```
+
+The approval must have captured a clean worktree, HEAD must be attached to a branch, and Git
+`user.name` and `user.email` must be configured. Codex continues to run under its selected sandbox
+and is instructed not to commit. After a schema-valid `completed` implementation/resume or an
+`improved` iteration, the agent-delegator controller checkpoints the diff, stages exactly the
+observed changed-file set, and creates one normal local commit. `needs-decision`, `blocked`, failed,
+checkpoint-error, and converged turns never commit. Each loop commit becomes the trusted parent for
+the next turn.
+
+Use `--commit-message="..."` to override the message for that invocation. Otherwise the controller
+uses the structured `commit_message` proposed by Codex, then falls back to the objective. Every
+created commit is recorded in `state.json`, machine history, run events, the observation report, and
+`attempts/<stage>/<attempt>/commit.json`; `commit-intent.json` preserves the proposed parent, message,
+and file set before Git runs. The option never authorizes push, tag, branch creation, PR creation,
+merge, rebase, amend, release, or deployment. `--allow-base-change` is intentionally incompatible
+with commit mode; recompile and approve the new base instead. Review the recorded commit hashes and
+run independent verification before integration.
 
 ## Repository-policy verification
 
@@ -342,7 +373,7 @@ From the repository root:
 agent-delegator resolve-transcript --json
 agent-delegator revalidate --run <run-id>
 agent-delegator approve --run <run-id>
-agent-delegator implement --run <run-id>
+agent-delegator implement --run <run-id> [--commit=on-success]
 agent-delegator loop \
   --run <run-id> \
   --max-turns=12 \
@@ -505,6 +536,7 @@ Important files:
   revision, dirty state, and a
   checkout worktree fingerprint captured before invocation. It also hashes the running source or
   bundled CLI artifact, so an installed package remains identifiable when no Git checkout exists.
+  Successful controller commits additionally retain `commit-intent.json` and `commit.json`.
 - `run-events.jsonl` — validated, append-only lifecycle events with timing, failure category,
   artifacts, metrics, model, and token usage when Codex emits it.
 - `result.json` — latest canonical implementer result.
@@ -668,8 +700,12 @@ cost because model pricing and billing semantics are external and time-dependent
   `--allow-base-change` or `--allow-worktree-change`.
 - Implementation, resume, loop, and verification default to `workspace-write`; danger-full-access
   requires a per-invocation owner flag pair and an audited reason.
+- Local controller commits are opt-in, require a clean approval and attached branch, and occur only
+  after a validated successful checkpoint. The original approval base and every generated linear
+  child are retained in run state and artifacts.
 - Resume re-verifies approval, the Evidence Bundle, and Git HEAD before sending a decision.
-- Prompts forbid commits, pushes, PR creation, deploys, and external mutations.
+- Prompts forbid Codex from modifying Git metadata and forbid pushes, PR creation, deploys, and
+  external mutations. Controller commit mode grants only the recorded local commit.
 - Unresolved Brief items block approval by default.
 - The Claude main agent reviews the source coverage, Brief, diff, and integration.
 

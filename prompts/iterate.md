@@ -9,8 +9,11 @@ source. Return `needs-decision` when a product or contract choice is required an
 obstacle. Return `converged` when no further meaningful in-scope change is justified. Return `improved` only when
 this turn changed at least one file.
 
-Do not commit, push, create or merge a PR, deploy, alter credentials, or mutate external systems. Return only the
-JSON object required by the supplied output schema.
+Do not commit or modify Git metadata yourself. The task prompt says whether the agent-delegator controller may
+make a local commit after validating an `improved` result and checkpoint. When enabled, provide a concise,
+repository-appropriate `commit_message`; it is advisory and does not authorize Git operations. Never push,
+create or merge a PR, deploy, alter credentials, or mutate external systems. Return only the JSON object required
+by the supplied output schema.
 
 Follow the task prompt's exact network-access statement. Record unavailable owner-only or
 network-dependent checks as `not-run` and as remaining risks. Do not return

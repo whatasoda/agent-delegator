@@ -44,6 +44,7 @@
       }
     },
     "approvedWorktreeSha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "approvedWorktreeClean": { "type": ["boolean", "null"] },
     "lastWorktreeSha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
     "observedWorktreeSha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
     "observedWorktreeChangedFileCount": { "type": ["integer", "null"], "minimum": 0 },
@@ -140,7 +141,47 @@
     },
     "verificationSandboxMode": { "$ref": "#/$defs/sandbox_mode" },
     "verificationSandboxReason": { "$ref": "#/$defs/sandbox_reason" },
-    "verificationSandboxSelections": { "$ref": "#/$defs/sandbox_selections" }
+    "verificationSandboxSelections": { "$ref": "#/$defs/sandbox_selections" },
+    "controllerCommitMode": { "type": "string", "enum": ["never", "on-success"] },
+    "controllerCommitSelections": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mode", "branch", "selected_at", "source"],
+        "properties": {
+          "mode": { "type": "string", "enum": ["never", "on-success"] },
+          "branch": { "type": ["string", "null"], "minLength": 1 },
+          "selected_at": { "type": "string", "format": "date-time" },
+          "source": { "type": "string", "enum": ["default", "explicit-owner"] }
+        }
+      }
+    },
+    "controllerCommits": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sha", "parent", "branch", "stage", "attempt", "message", "created_at", "changed_files"],
+        "properties": {
+          "sha": { "type": "string", "pattern": "^[a-f0-9]{40,64}$" },
+          "parent": { "type": "string", "pattern": "^[a-f0-9]{40,64}$" },
+          "branch": { "type": "string", "minLength": 1 },
+          "stage": { "type": "string", "enum": ["implement", "resume", "iterate"] },
+          "attempt": { "type": "integer", "minimum": 1 },
+          "message": { "type": "string", "minLength": 1, "maxLength": 2000, "pattern": "^[^\\u0000]*$" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "changed_files": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    "lastDelegatedHead": { "type": ["string", "null"], "pattern": "^[a-f0-9]{40,64}$" }
   },
   "$defs": {
     "sandbox_mode": { "type": "string", "enum": ["workspace-write", "danger-full-access"] },

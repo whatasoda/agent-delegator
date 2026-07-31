@@ -14,7 +14,9 @@ provenance, approval boundaries, and useful observation data across materially d
 - Claude selects exact targets with the user, reads each repository's durable instructions, reviews
   every Brief and diff, and owns evaluation and integration.
 - Codex may compile evidence read-only or implement an approved Brief in a user-approved isolated
-  worktree. It does not commit, push, open a PR, deploy, or mutate external systems.
+  worktree. It does not modify Git metadata, push, open a PR, deploy, or mutate external systems.
+  Cross-repository validation may exercise controller `--commit=on-success` only when the owner
+  explicitly approves the disposable branch and clean approval baseline; it must not push.
 - Run artifacts may contain transcripts and patches. Agree on an external private runs directory and
   retention before starting.
 

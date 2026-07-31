@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## [0.1.0-alpha.9] - 2026-07-31
+
+### Added
+
+- Added opt-in controller `--commit=on-success` support for validated completed implementation,
+  resume, and improved autonomous turns, with per-attempt intent/result artifacts.
+- Added structured commit-message suggestions and commit-chain observability in state, events,
+  machine history, and reports.
+
+### Changed
+
+- Keep Codex Git metadata read-only while allowing the parent controller to create normal local
+  commits from clean approvals on attached branches. Push and all broader integration actions
+  remain owner-controlled.
+
 ## [0.1.0-alpha.8] - 2026-07-31
 
 ### Added

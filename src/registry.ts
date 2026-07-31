@@ -39,6 +39,9 @@ export interface RunHistoryEntry {
   implementation_completed_before_iteration_failure?: boolean;
   salvaged?: boolean;
   autonomous_stop_reason?: string | null;
+  controller_commit_mode?: string;
+  controller_commit_count?: number;
+  controller_commit_shas?: string[];
   codex_environment?: {
     mode: string;
     auth_store: string;

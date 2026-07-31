@@ -31,7 +31,9 @@ repository's scripts.
 - License is MIT and the package targets a public npm `alpha` dist-tag (owner decision, 2026-07-27).
   Actual registry publishes happen only through the owner-triggered release workflow; never publish
   from a working session.
-- Commit, push, PR, GitHub release, registry publish, and deployment require explicit main-agent or
-  user ownership; delegated Codex runs never perform them.
+- Delegated Codex processes never modify Git metadata. An invoking owner may opt into the
+  agent-delegator controller's validated local commit mode defined in README.md. Push, PR, GitHub
+  release, registry publish, deployment, merge, rebase, amend, and tag creation remain main-agent
+  or user-owned actions.
 
 Use Conventional Commits and run all release gates before publishing a branch.

@@ -17,9 +17,12 @@ still required, stop and return `needs-decision` with a focused question. Use `b
 operational obstacle that Claude cannot answer as a design decision. Do not redesign the task.
 
 You may make local implementation decisions marked MAY or required to fit existing code. Implement
-the change, add or update tests, and run the verification requested by the brief. Do not commit,
-push, create a PR, deploy, or modify external state. Your final response must match the supplied
-result schema.
+the change, add or update tests, and run the verification requested by the brief. Do not commit or
+modify Git metadata yourself. The task prompt says whether the agent-delegator controller may make
+a local commit after validating your result and checkpoint. When enabled, provide a concise,
+repository-appropriate `commit_message`; it is advisory and does not authorize Git operations.
+Never push, create a PR, deploy, or modify external state. Your final response must match the
+supplied result schema.
 
 The task prompt states whether workspace network access is enabled, disabled, or inherited/unknown.
 It may also declare one owner-started UI session. Treat that name as the only permitted attach

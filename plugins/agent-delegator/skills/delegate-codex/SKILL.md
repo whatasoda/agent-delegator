@@ -17,14 +17,15 @@ description: >-
 委譲するのは「設計判断がこの会話で済んでいる、境界の定まった実装タスク」だけ。
 
 - 向く: 複数ファイルの機械的変更、仕様確定済みの機能実装、テスト修正ループを伴う bounded な変更
-- 向かない: 設計そのもの、ごく小さな編集（オーバーヘッド負け）、commit/push/デプロイを含む作業。
-  委譲 run は外部状態を変更しない — commit 以降は必ずこのセッションがレビュー後に行う
+- 向かない: 設計そのもの、ごく小さな編集（オーバーヘッド負け）、push/PR/デプロイを含む作業。
+  Codex process はGit metadataや外部状態を変更しない。local commitだけは、専用branch/worktreeとclean
+  approvalを確認したownerが`--commit=on-success`を明示した場合にcontrollerへ任せられる
 
 ## 前提チェック
 
-`agent-delegator --version` が `0.1.0-alpha.8` を返すことを確認してから
+`agent-delegator --version` が `0.1.0-alpha.9` を返すことを確認してから
 `agent-delegator doctor --json` を実行する。CLI が無い、または別バージョンなら
-`bun add --global @whatasoda/agent-delegator@0.1.0-alpha.8`（Bun >= 1.3.0 必須）で、この
+`bun add --global @whatasoda/agent-delegator@0.1.0-alpha.9`（Bun >= 1.3.0 必須）で、この
 operator が検証済みの CLI に揃える。`doctor` が失敗した状態で委譲を開始しない。
 `doctor` の `codex_authentication.authenticated` も確認し、falseなら選択したhome/storeでloginを整える。
 
@@ -87,10 +88,16 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
    長時間の bounded 改善を任せる場合は、implement の代わりに
    `agent-delegator loop --run <id> --max-turns=<n> --max-minutes=<n>`。approved run では初回実装も
    行い、completed run では改善 turn から再開する。各 turn で approval / HEAD / worktree が再検証される。
+   local commitまで任せる場合だけ、approval前にworktreeがcleanで専用branchにいることとGit identityを
+   確認し、`--commit=on-success`を付ける。Codexではなくcontrollerがschema-validなcompleted/improved
+   checkpointだけを1 commitにする。`--commit-message`は全turn共通overrideなので必要時だけ使う。
+   作成SHAは`state.json`とattemptの`commit.json`でレビューする。このoptionはpush/tag/branch作成/PR/
+   merge/rebase/amend/release/deployを許可しない。`--allow-base-change`とは併用せず新baseを再approveする。
 6. **結果処理**: run dir の `result.json` を読む。
    - `completed` → 自分で diff をレビューし、必要なら
      `agent-delegator verify --run <id>` で repository 規約と Brief に基づく独立 smoke を委譲する。
      `verification.json` の command / basis / status を確認し、最終統合判断は自分で行う
+     controller commit modeならdiffに加えて全`controllerCommits[].sha`をレビューし、push等は別途ownerが行う
    - `needs-decision` → focused question に1つだけ答える:
      `agent-delegator resume --run <id> --message="<決定と理由>"`（background）。
      回答が MUST / scope / 受入条件を変えるなら resume せず Brief 編集 → revalidate → 再 approve

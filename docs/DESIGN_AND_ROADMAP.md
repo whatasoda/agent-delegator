@@ -51,7 +51,7 @@
 | 現状調査と既決定事項の構造化 | read-only compiler | 不明点を unresolved にする |
 | 境界が定まった実装、局所的な MAY 判断 | implementer | MUST/仕様衝突は `needs-decision` |
 | 運用環境や権限等の障害 | Claude / 実行環境 | `blocked` として扱う |
-| diff review、統合、commit/PR/release、ユーザー説明 | Claude | Codex は外部状態を変更しない |
+| diff review、統合、任意の検証済みlocal commit、PR/release、ユーザー説明 | Claude / controller | Codex process はGit metadataや外部状態を変更しない |
 
 複数の分類にまたがる task は、設計部分を Claude 側で終えてから実装部分だけを委譲する。
 
@@ -157,7 +157,8 @@ writer に対する署名機構ではない。v1 approval は実行不可、v2 �
 
 - compiler: `read-only`
 - implementer/resume: `workspace-write`
-- commit、push、PR、deploy、external mutation: Claude main agent
+- opt-inの検証済みlocal commit: agent-delegator controller（clean approvalと成功checkpoint後のみ）
+- push、tag、branch作成、PR、merge、rebase、amend、deploy、external mutation: Claude main agent
 
 resume でも approval と HEAD を再検証し、sandbox を `workspace-write` に明示的に固定する。
 raw transcript/Evidence は compiler の入力に限定し、implementer prompt には含めない。implementer は
@@ -237,11 +238,13 @@ iteration ごとに approval、base commit、直前 worktree checkpoint を再�
 統合手順を分岐させない。
 
 開始時に明示した worktree drift の許可は最初の必要な execution で消費し、後続 turn へ持ち越さない。
-improvement phase 開始時の Git HEAD も固定し、base change を一度許可した場合でも途中の新しい commit は
-別の変更として拒否する。
+improvement phase 開始時の Git HEAD も固定する。controller commit modeでは、直前の検証済み成功turnから
+作成したlinear childだけを新しいtrusted HEADとして次turnへ渡し、それ以外のcommitは別変更として拒否する。
 
-これは無期限・無監督の agent loop ではない。commit、push、PR、deploy、external mutation は引き続き
-Claude 側の責務であり、limit 到達も acceptance の証明にはならない。各 iteration の prompt、結果、
+これは無期限・無監督の agent loop ではない。Codex processによるGit metadata操作は禁止する。
+ownerが`--commit=on-success`を明示した場合だけcontrollerが各成功checkpointをlinear local commitにする。
+push、tag、PR、merge、rebase、amend、deploy、external mutationは引き続きClaude側の責務であり、
+limit 到達も acceptance の証明にはならない。各 iteration の prompt、結果、
 event、usage、checkpoint は `attempts/iterate/` に残し、run の pattern を `autonomous` として既存の
 pattern/variant report と machine history で比較できるようにする。
 収束と limit 到達を後日区別できるよう、各 invocation の stop reason と limit は append-only の

@@ -238,6 +238,11 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
   workspace-writeへ戻す。project profileは実装・verify別のrequestと理由を保持できるがgrantはできない。
   selection/reason/historyをprompt、state、run event、machine history、reportに記録し、compile/researchの
   read-only境界は維持。（2026-07-31 done）
+- [x] P5-27: 検証済みlocal commit — implement/resume/loopに既定`never`の
+  `--commit=on-success`を追加。Codex processのGit metadata操作禁止は維持し、clean approval・attached
+  branch・Git identity・成功checkpointを確認したcontrollerだけがlinear childを作る。失敗、判断待ち、
+  blocked、convergedではcommitせず、intent/result、state、event、history、reportへSHAと選択を記録。
+  push/tag/PR/merge/rebase/amend/release/deployは引き続きowner責務。（2026-07-31 done）
 
 ### Trial — 実業務リポジトリ検証
 

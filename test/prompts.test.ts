@@ -29,7 +29,8 @@ describe("delegation prompts", () => {
     expect(normalized).toContain("The Brief remains the complete task contract");
     expect(normalized).toContain("Do not broaden scope, revise a MUST, invent product behavior");
     expect(normalized).toContain("Return `converged` when no further meaningful in-scope change is justified");
-    expect(normalized).toContain("Do not commit, push, create or merge a PR, deploy");
+    expect(normalized).toContain("Do not commit or modify Git metadata yourself");
+    expect(normalized).toContain("Never push, create or merge a PR, deploy");
   });
 
   test("keeps delegated verification compatible with the workspace sandbox", async () => {

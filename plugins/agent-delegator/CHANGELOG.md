@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.6 - 2026-07-31
+
+- Updated the exact core CLI compatibility preflight to `0.1.0-alpha.9`.
+- Added operator guidance for opt-in validated local controller commits without granting Codex Git
+  metadata access or any push/integration authority.
+
 ## 0.2.5 - 2026-07-31
 
 - Updated the exact core CLI compatibility preflight to `0.1.0-alpha.8`.

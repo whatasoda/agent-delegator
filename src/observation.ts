@@ -45,6 +45,9 @@ export interface RunEvent {
     headless_job_id?: string;
     sandbox_mode?: "workspace-write" | "danger-full-access";
     sandbox_reason?: string | null;
+    controller_commit_mode?: "never" | "on-success";
+    controller_commit_created?: boolean;
+    controller_commit_sha?: string;
   };
   artifacts: string[];
 }
@@ -313,6 +316,12 @@ export interface RunObservationSummary {
   failure_phase: string | null;
   implementation_completed_before_iteration_failure: boolean;
   verification_status: "passed" | "failed" | "partial" | "not-run" | null;
+  controller_commits: {
+    mode: string;
+    count: number;
+    shas: string[];
+    selections: RunState["controllerCommitSelections"];
+  };
   codex_environment: {
     mode: string;
     auth_store: string;
@@ -419,6 +428,12 @@ export async function buildRunObservation(runDir: string): Promise<RunObservatio
     failure_phase: state.failurePhase ?? null,
     implementation_completed_before_iteration_failure: completedBeforeIterationFailure,
     verification_status: state.verificationStatus ?? null,
+    controller_commits: {
+      mode: state.controllerCommitMode ?? "never",
+      count: state.controllerCommits?.length ?? 0,
+      shas: state.controllerCommits?.map((commit) => commit.sha) ?? [],
+      selections: state.controllerCommitSelections ?? [],
+    },
     codex_environment: {
       mode: state.codexHomeMode ?? "shared",
       auth_store: state.codexAuthStore ?? "auto",
@@ -529,6 +544,7 @@ export interface ObservationReport {
     input_tokens: number;
     cached_input_tokens: number;
     output_tokens: number;
+    controller_commits: number;
     briefs_compared: number;
     briefs_edited: number;
     tracked_invocations: number;
@@ -567,6 +583,7 @@ export interface ObservationReport {
     codex_auth_store: Record<string, number>;
     workspace_write_network_access: Record<string, number>;
     implementation_sandbox_mode: Record<string, number>;
+    controller_commit_mode: Record<string, number>;
     workspace_write_writable_root: Record<string, number>;
     implementation_ui_session_handoff: Record<string, number>;
     verification_network_access: Record<string, number>;
@@ -714,6 +731,7 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
     failure_phase: {},
     implementation_model: {}, research_model: {}, verification_model: {}, verification_status: {},
     codex_home_mode: {}, codex_auth_store: {}, workspace_write_network_access: {}, implementation_sandbox_mode: {},
+    controller_commit_mode: {},
     workspace_write_writable_root: {}, implementation_ui_session_handoff: {},
     verification_network_access: {}, verification_sandbox_mode: {}, verification_writable_root: {}, verification_ui_session_handoff: {},
     execution_backend: {},
@@ -738,6 +756,11 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
     );
     if (!implementationSandboxModes.size) implementationSandboxModes.add(run.codex_environment.sandbox_mode);
     for (const mode of implementationSandboxModes) increment(breakdowns.implementation_sandbox_mode, mode);
+    const controllerCommitModes = new Set<string>(
+      run.controller_commits.selections?.map((selection) => selection.mode) ?? [],
+    );
+    if (!controllerCommitModes.size) controllerCommitModes.add(run.controller_commits.mode);
+    for (const mode of controllerCommitModes) increment(breakdowns.controller_commit_mode, mode);
     if (run.codex_environment.writable_roots.length) {
       for (const root of run.codex_environment.writable_roots) increment(breakdowns.workspace_write_writable_root, root);
     } else {
@@ -822,6 +845,7 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
       input_tokens: runs.reduce((sum, run) => sum + run.usage.input_tokens, 0),
       cached_input_tokens: runs.reduce((sum, run) => sum + run.usage.cached_input_tokens, 0),
       output_tokens: runs.reduce((sum, run) => sum + run.usage.output_tokens, 0),
+      controller_commits: runs.reduce((sum, run) => sum + run.controller_commits.count, 0),
       briefs_compared: compared.length,
       briefs_edited: compared.filter((run) => run.brief_changed_by_claude).length,
       tracked_invocations: runs.reduce((sum, run) => sum + run.controller_cost.tracked_invocations, 0),
@@ -894,6 +918,7 @@ export function renderObservationReport(report: ObservationReport): string {
 - Token telemetry coverage: ${report.summary.usage_observed_calls} / ${report.summary.codex_calls} Codex calls${report.summary.token_observation_percent === null ? "" : ` (${report.summary.token_observation_percent}%)`}
 - Input / cached input / output tokens observed: ${report.summary.input_tokens} / ${report.summary.cached_input_tokens} / ${report.summary.output_tokens}
 - Controller interactions tracked: ${report.summary.tracked_invocations} (gate rejections: ${report.summary.gate_rejections}, failed Codex calls: ${report.summary.codex_failed_calls})
+- Validated local controller commits: ${report.summary.controller_commits}
 - Review surface bytes (brief/evidence/result/research/verification): ${report.summary.review_surface_bytes}
 - Average ratings (requirements / implementation / communication / research): ${report.averages.ratings.requirements_fidelity ?? "n/a"} / ${report.averages.ratings.implementation_quality ?? "n/a"} / ${report.averages.ratings.communication_efficiency ?? "n/a"} / ${report.averages.ratings.research_quality ?? "n/a"}
 
@@ -951,6 +976,10 @@ ${breakdownRows(report.breakdowns.workspace_write_network_access)}
 | --- | ---: |
 ${breakdownRows(report.breakdowns.implementation_sandbox_mode)}
 
+| Controller commit mode | Runs |
+| --- | ---: |
+${breakdownRows(report.breakdowns.controller_commit_mode)}
+
 | Implementation extra writable root | Runs |
 | --- | ---: |
 ${breakdownRows(report.breakdowns.workspace_write_writable_root)}
@@ -1007,9 +1036,9 @@ ${breakdownRows(report.breakdowns.failure_phase)}
 
 ## Runs
 
-| Run | Pattern | Variant | Type | Complexity | Status | Verify | Detached | Codex state | Brief edits | Gate rejections | Outcome |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-${report.runs.map((run) => `| ${markdownCell(run.run_id)} | ${markdownCell(run.delegation_pattern)} | ${markdownCell(run.experiment_variant ?? "-")} | ${markdownCell(run.metadata.task_type)} | ${markdownCell(run.metadata.complexity)} | ${markdownCell(run.salvaged_after_failure ? `${run.status} (salvaged)` : run.implementation_completed_before_iteration_failure ? `${run.status} (implementation completed; iterate failed)` : run.status)} | ${markdownCell(run.verification_status ?? "-")} | ${markdownCell(run.detached_execution.backends.join(",") || "-")} | ${markdownCell(`${run.codex_environment.mode}/${run.codex_environment.auth_store}/impl:${run.codex_environment.network_access}+${run.codex_environment.writable_roots.length}roots+${run.codex_environment.ui_sessions.length}ui/verify:${run.codex_environment.verification_network_access ?? "-"}+${run.codex_environment.verification_writable_roots.length}roots+${run.codex_environment.verification_ui_sessions.length}ui`)} | ${run.brief_json_difference_count ?? "n/a"} | ${run.controller_cost.gate_rejections} | ${markdownCell(run.evaluation?.outcome ?? "not-evaluated")} |`).join("\n")}
+| Run | Pattern | Variant | Type | Complexity | Status | Verify | Commits | Detached | Codex state | Brief edits | Gate rejections | Outcome |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+${report.runs.map((run) => `| ${markdownCell(run.run_id)} | ${markdownCell(run.delegation_pattern)} | ${markdownCell(run.experiment_variant ?? "-")} | ${markdownCell(run.metadata.task_type)} | ${markdownCell(run.metadata.complexity)} | ${markdownCell(run.salvaged_after_failure ? `${run.status} (salvaged)` : run.implementation_completed_before_iteration_failure ? `${run.status} (implementation completed; iterate failed)` : run.status)} | ${markdownCell(run.verification_status ?? "-")} | ${markdownCell(run.controller_commits.shas.map((sha) => sha.slice(0, 12)).join(",") || "-")} | ${markdownCell(run.detached_execution.backends.join(",") || "-")} | ${markdownCell(`${run.codex_environment.mode}/${run.codex_environment.auth_store}/impl:${run.codex_environment.network_access}+${run.codex_environment.writable_roots.length}roots+${run.codex_environment.ui_sessions.length}ui/verify:${run.codex_environment.verification_network_access ?? "-"}+${run.codex_environment.verification_writable_roots.length}roots+${run.codex_environment.verification_ui_sessions.length}ui`)} | ${run.brief_json_difference_count ?? "n/a"} | ${run.controller_cost.gate_rejections} | ${markdownCell(run.evaluation?.outcome ?? "not-evaluated")} |`).join("\n")}
 
 ${directoriesSection(report)}${report.invalid_runs.length ? `## Invalid runs\n\n${report.invalid_runs.map((item) => `- ${item.run_dir}: ${item.error}`).join("\n")}\n` : ""}`;
 }

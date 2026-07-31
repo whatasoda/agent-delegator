@@ -52,7 +52,10 @@
         "execution_backend": { "type": "string", "enum": ["process", "herdr"] },
         "headless_job_id": { "type": "string", "minLength": 1 },
         "sandbox_mode": { "type": "string", "enum": ["workspace-write", "danger-full-access"] },
-        "sandbox_reason": { "type": ["string", "null"], "maxLength": 500 }
+        "sandbox_reason": { "type": ["string", "null"], "maxLength": 500 },
+        "controller_commit_mode": { "type": "string", "enum": ["never", "on-success"] },
+        "controller_commit_created": { "type": "boolean" },
+        "controller_commit_sha": { "type": "string", "pattern": "^[a-f0-9]{40,64}$" }
       }
     },
     "artifacts": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }

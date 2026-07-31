@@ -35,6 +35,17 @@ async function git(cwd: string, ...args: string[]): Promise<void> {
   if (exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${stderr}`);
 }
 
+async function gitOutput(cwd: string, ...args: string[]): Promise<string> {
+  const child = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  if (exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${stderr}`);
+  return stdout.trim();
+}
+
 async function fixture(): Promise<{
   repo: string;
   runs: string;
@@ -123,7 +134,8 @@ const result = process.env.FAKE_CODEX_INVALID_RESULT === "1" ? { status: "comple
   brief_deviations: [],
   verification: [],
   remaining_risks: [],
-  question: isResume || process.env.FAKE_CODEX_IMPLEMENT_COMPLETED === "1" ? "" : "What exact greeting should be used?"
+  question: isResume || process.env.FAKE_CODEX_IMPLEMENT_COMPLETED === "1" ? "" : "What exact greeting should be used?",
+  commit_message: process.env.FAKE_CODEX_COMMIT_MESSAGE
 };
 const research = process.env.FAKE_CODEX_INVALID_RESEARCH === "1" ? { status: "answered" } : {
   status: "answered",
@@ -142,7 +154,8 @@ const iteration = {
   brief_deviations: [],
   verification: [{ command: "inspect fixture", status: "passed", details: "fixture checked" }],
   remaining_risks: [],
-  question: ""
+  question: "",
+  commit_message: process.env.FAKE_CODEX_ITERATION_COMMIT_MESSAGE
 };
 const verification = {
   status: process.env.FAKE_CODEX_VERIFICATION_STATUS ?? "passed",
@@ -999,6 +1012,207 @@ describe("agent-delegator CLI", () => {
     expect(state).toMatchObject({ status: "failed", failurePhase: "implement" });
     const events = await readFile(join(runs, "delegated-commit", "run-events.jsonl"), "utf8");
     expect(events).toContain('"failure_category":"repository-drift"');
+  });
+
+  test("creates controller commits only after validated successful turns", async () => {
+    const { repo, runs, transcript, env, log } = await fixture();
+    await git(repo, "config", "user.name", "Agent Delegator Test");
+    await git(repo, "config", "user.email", "test@example.invalid");
+    await run(
+      [
+        "compile", "--objective", "Commit validated delegated work", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "controller-commit",
+      ],
+      repo,
+      env,
+    );
+    await run(["approve", "--run", "controller-commit", "--runs-dir", runs, "--allow-unresolved"], repo, env);
+    const base = await gitOutput(repo, "rev-parse", "HEAD");
+
+    const implementation = await run(
+      [
+        "implement", "--run", "controller-commit", "--runs-dir", runs,
+        "--commit", "on-success",
+      ],
+      repo,
+      {
+        ...env,
+        FAKE_CODEX_IMPLEMENT_COMPLETED: "1",
+        FAKE_CODEX_PARTIAL_WRITE: "1",
+        FAKE_CODEX_COMMIT_MESSAGE: "feat: record delegated work",
+      },
+    );
+
+    expect(implementation.exitCode).toBe(0);
+    const output = JSON.parse(implementation.stdout);
+    expect(output.controller_commit).toMatchObject({
+      parent: base,
+      stage: "implement",
+      message: "feat: record delegated work",
+      changed_files: ["partial-work.txt"],
+    });
+    expect(await gitOutput(repo, "status", "--porcelain=v1")).toBe("");
+    expect(await gitOutput(repo, "log", "-1", "--format=%s")).toBe("feat: record delegated work");
+    expect(await gitOutput(repo, "rev-parse", "HEAD^")).toBe(base);
+    const state = JSON.parse(await readFile(join(runs, "controller-commit", "state.json"), "utf8"));
+    expect(state).toMatchObject({
+      status: "completed",
+      approvedWorktreeClean: true,
+      controllerCommitMode: "on-success",
+      lastDelegatedHead: output.controller_commit.sha,
+    });
+    expect(state.controllerCommits).toHaveLength(1);
+    const attemptDir = join(runs, "controller-commit", "attempts", "implement", "001");
+    expect(JSON.parse(await readFile(join(attemptDir, "commit-intent.json"), "utf8"))).toMatchObject({
+      parent: base,
+      message: "feat: record delegated work",
+    });
+    expect(JSON.parse(await readFile(join(attemptDir, "commit.json"), "utf8"))).toMatchObject({
+      sha: output.controller_commit.sha,
+    });
+    expect(await readFile(join(attemptDir, "prompt.md"), "utf8")).toContain("Do not run git commit");
+    const events = (await readFile(join(runs, "controller-commit", "run-events.jsonl"), "utf8"))
+      .trim().split("\n").map((line) => JSON.parse(line));
+    expect(events.findLast((event) => event.stage === "implement" && event.event === "completed").metrics)
+      .toMatchObject({
+        controller_commit_mode: "on-success",
+        controller_commit_created: true,
+        controller_commit_sha: output.controller_commit.sha,
+      });
+
+    const verification = await run(
+      ["verify", "--run", "controller-commit", "--runs-dir", runs],
+      repo,
+      env,
+    );
+    expect(verification.exitCode).toBe(0);
+    const observation = await run(
+      ["status", "--run", "controller-commit", "--runs-dir", runs, "--observation"],
+      repo,
+      env,
+    );
+    expect(JSON.parse(observation.stdout).observation.controller_commits).toMatchObject({
+      mode: "on-success",
+      count: 1,
+      shas: [output.controller_commit.sha],
+    });
+    const report = await run(["report", "--runs-dir", runs, "--format", "markdown"], repo, env);
+    expect(report.stdout).toContain("Validated local controller commits: 1");
+    expect(report.stdout).toContain(output.controller_commit.sha.slice(0, 12));
+    const history = (await readFile(resolve(runs, "..", "history.jsonl"), "utf8"))
+      .trim().split("\n").map((line) => JSON.parse(line));
+    expect(history.findLast((entry) => entry.run_id === "controller-commit")).toMatchObject({
+      controller_commit_mode: "on-success",
+      controller_commit_count: 1,
+      controller_commit_shas: [output.controller_commit.sha],
+    });
+    expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(3);
+  });
+
+  test("advances the trusted controller commit chain across autonomous improvements", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    await git(repo, "config", "user.name", "Agent Delegator Test");
+    await git(repo, "config", "user.email", "test@example.invalid");
+    await run(
+      [
+        "compile", "--objective", "Commit an autonomous improvement chain", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "controller-loop",
+      ],
+      repo,
+      env,
+    );
+    await run(["approve", "--run", "controller-loop", "--runs-dir", runs, "--allow-unresolved"], repo, env);
+    const base = await gitOutput(repo, "rev-parse", "HEAD");
+
+    const loop = await run(
+      [
+        "loop", "--run", "controller-loop", "--runs-dir", runs, "--max-turns", "2",
+        "--commit", "on-success",
+      ],
+      repo,
+      {
+        ...env,
+        FAKE_CODEX_IMPLEMENT_COMPLETED: "1",
+        FAKE_CODEX_PARTIAL_WRITE: "1",
+        FAKE_CODEX_ITERATION_OUTCOME: "improved",
+        FAKE_CODEX_COMMIT_MESSAGE: "feat: delegated implementation",
+        FAKE_CODEX_ITERATION_COMMIT_MESSAGE: "refactor: autonomous improvement",
+      },
+    );
+
+    expect(loop.exitCode).toBe(0);
+    expect(JSON.parse(loop.stdout)).toMatchObject({ stop_reason: "turn-limit", turns_completed: 2 });
+    const state = JSON.parse(await readFile(join(runs, "controller-loop", "state.json"), "utf8"));
+    expect(state.controllerCommits).toHaveLength(3);
+    expect(state.controllerCommits.map((commit: { stage: string }) => commit.stage))
+      .toEqual(["implement", "iterate", "iterate"]);
+    expect(state.controllerCommits[0].parent).toBe(base);
+    expect(state.controllerCommits[1].parent).toBe(state.controllerCommits[0].sha);
+    expect(state.controllerCommits[2].parent).toBe(state.controllerCommits[1].sha);
+    expect(await gitOutput(repo, "rev-list", "--count", `${base}..HEAD`)).toBe("3");
+    expect(await gitOutput(repo, "status", "--porcelain=v1")).toBe("");
+  });
+
+  test("does not controller-commit partial work from a decision request", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    await git(repo, "config", "user.name", "Agent Delegator Test");
+    await git(repo, "config", "user.email", "test@example.invalid");
+    await run(
+      [
+        "compile", "--objective", "Pause before committing an unresolved decision", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "controller-no-commit",
+      ],
+      repo,
+      env,
+    );
+    await run(["approve", "--run", "controller-no-commit", "--runs-dir", runs, "--allow-unresolved"], repo, env);
+    const base = await gitOutput(repo, "rev-parse", "HEAD");
+
+    const implementation = await run(
+      [
+        "implement", "--run", "controller-no-commit", "--runs-dir", runs,
+        "--commit", "on-success",
+      ],
+      repo,
+      { ...env, FAKE_CODEX_PARTIAL_WRITE: "1" },
+    );
+
+    expect(implementation.exitCode).toBe(0);
+    expect(JSON.parse(implementation.stdout).status).toBe("needs-decision");
+    expect(await gitOutput(repo, "rev-parse", "HEAD")).toBe(base);
+    expect(await gitOutput(repo, "status", "--porcelain=v1")).toContain("partial-work.txt");
+    const state = JSON.parse(await readFile(join(runs, "controller-no-commit", "state.json"), "utf8"));
+    expect(state.controllerCommits).toEqual([]);
+  });
+
+  test("rejects controller commit mode when approval captured a dirty worktree", async () => {
+    const { repo, runs, transcript, env, log } = await fixture();
+    await git(repo, "config", "user.name", "Agent Delegator Test");
+    await git(repo, "config", "user.email", "test@example.invalid");
+    await run(
+      [
+        "compile", "--objective", "Reject ambiguous commit ownership", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "dirty-controller-commit",
+      ],
+      repo,
+      env,
+    );
+    await writeFile(join(repo, "owner-work.txt"), "not delegated\n");
+    await run(["approve", "--run", "dirty-controller-commit", "--runs-dir", runs, "--allow-unresolved"], repo, env);
+
+    const implementation = await run(
+      [
+        "implement", "--run", "dirty-controller-commit", "--runs-dir", runs,
+        "--commit", "on-success",
+      ],
+      repo,
+      { ...env, FAKE_CODEX_IMPLEMENT_COMPLETED: "1" },
+    );
+
+    expect(implementation.exitCode).toBe(1);
+    expect(implementation.stderr).toContain("requires an approval created from a clean worktree");
+    expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(1);
+    expect(await gitOutput(repo, "rev-list", "--count", "HEAD")).toBe("1");
   });
 
   test("rejects concurrent mutation of the same run and removes the lock afterward", async () => {

@@ -54,6 +54,7 @@
       }
     },
     "remaining_risks": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-    "question": { "type": "string" }
+    "question": { "type": "string" },
+    "commit_message": { "type": "string", "maxLength": 2000, "pattern": "^[^\\u0000]*$" }
   }
 }

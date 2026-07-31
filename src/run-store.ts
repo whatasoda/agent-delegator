@@ -31,6 +31,26 @@ export interface SandboxSelectionRecord {
   source: "default" | "explicit-owner";
 }
 
+export type ControllerCommitMode = "never" | "on-success";
+
+export interface ControllerCommitSelectionRecord {
+  mode: ControllerCommitMode;
+  branch: string | null;
+  selected_at: string;
+  source: "default" | "explicit-owner";
+}
+
+export interface ControllerCommitRecord {
+  sha: string;
+  parent: string;
+  branch: string;
+  stage: "implement" | "resume" | "iterate";
+  attempt: number;
+  message: string;
+  created_at: string;
+  changed_files: string[];
+}
+
 export interface RunState {
   schemaVersion: 1;
   runId: string;
@@ -54,6 +74,7 @@ export interface RunState {
   controllerPid?: number | null;
   attempts?: { collect: number; compile: number; implement: number; resume: number };
   approvedWorktreeSha256?: string | null;
+  approvedWorktreeClean?: boolean | null;
   lastWorktreeSha256?: string | null;
   observedWorktreeSha256?: string | null;
   observedWorktreeChangedFileCount?: number | null;
@@ -101,6 +122,10 @@ export interface RunState {
   verificationSandboxMode?: DelegatedSandboxMode;
   verificationSandboxReason?: string | null;
   verificationSandboxSelections?: SandboxSelectionRecord[];
+  controllerCommitMode?: ControllerCommitMode;
+  controllerCommitSelections?: ControllerCommitSelectionRecord[];
+  controllerCommits?: ControllerCommitRecord[];
+  lastDelegatedHead?: string | null;
 }
 
 export function observedRunModels(state: RunState): {
@@ -219,6 +244,9 @@ export async function writeRunState(runDir: string, state: RunState): Promise<vo
       evaluation && ["accepted-as-is", "accepted-with-changes"].includes(evaluation.outcome),
     ),
     autonomous_stop_reason: state.autonomousStopReason ?? null,
+    controller_commit_mode: state.controllerCommitMode ?? "never",
+    controller_commit_count: state.controllerCommits?.length ?? 0,
+    controller_commit_shas: state.controllerCommits?.map((commit) => commit.sha) ?? [],
     codex_environment: {
       mode: state.codexHomeMode ?? "shared",
       auth_store: state.codexAuthStore ?? "auto",
