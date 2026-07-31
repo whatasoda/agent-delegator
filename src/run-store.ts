@@ -73,12 +73,15 @@ export interface RunState {
   codexHome?: string | null;
   codexAuthStore?: CodexAuthStore;
   workspaceWriteNetworkAccess?: "inherit" | "enabled" | "disabled";
+  workspaceWriteWritableRoots?: string[];
   verificationModel?: string | null;
   verificationSessionId?: string | null;
   verificationCount?: number;
   latestVerificationPath?: string | null;
   verificationStatus?: "passed" | "failed" | "partial" | "not-run" | null;
   verificationFailure?: string | null;
+  verificationNetworkAccess?: "inherit" | "enabled" | "disabled";
+  verificationWritableRoots?: string[];
 }
 
 export function observedRunModels(state: RunState): {
@@ -201,6 +204,9 @@ export async function writeRunState(runDir: string, state: RunState): Promise<vo
       mode: state.codexHomeMode ?? "shared",
       auth_store: state.codexAuthStore ?? "auto",
       network_access: state.workspaceWriteNetworkAccess ?? "inherit",
+      writable_roots: state.workspaceWriteWritableRoots ?? [],
+      verification_network_access: state.verificationNetworkAccess ?? null,
+      verification_writable_roots: state.verificationWritableRoots ?? [],
     },
     evaluation,
   });

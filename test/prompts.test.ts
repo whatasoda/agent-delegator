@@ -42,7 +42,9 @@ describe("delegation prompts", () => {
     const verifier = (await readFile(resolve(import.meta.dir, "../prompts/verify.md"), "utf8"))
       .replace(/\s+/g, " ");
 
-    expect(compiler).toContain("runnable in a workspace-write sandbox without credentials or network access");
+    expect(compiler).toContain("runnable in a workspace-write sandbox");
+    expect(compiler).toContain("Network access or additional writable roots may be required only when collected evidence");
+    expect(compiler).toContain("Do not assume the sandbox can launch Chrome");
     expect(compiler).toContain("do not normalize or reconstruct it");
     expect(compiler).toContain("Never present an unresolved URL, path, identifier");
     expect(implementer).toContain("Record an unavailable owner-only check as `not-run`");

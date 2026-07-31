@@ -287,6 +287,15 @@ workspace-write のnetworkは `inherit` を後方互換の既定にし、実効C
 断定しない。必要なrunだけ `enabled` / `disabled` を明示し、Codex config引数、prompt、state、history、
 reportを同じ値にする。network許可は外部mutation許可とは独立であり、deploy等の禁止は維持する。
 
+追加writable rootもrun側が明示した既存directoryだけをCodex configへ渡し、実装sessionと独立verify
+sessionで別の固定policyとしてstate/history/reportへ残す。repositoryのprofile内容だけでhost filesystem
+権限を自動拡張しない。永続defaultが必要ならtrusted projectの `.codex/config.toml`、正確なrun監査が
+必要ならCLI optionを使い分ける。
+
+`danger-full-access` は既存のworkspace-write境界と衝突するため委譲optionにしない。UI検証ではbrowser
+processの起動をowner prerequisite、既存の明示sessionへの接続・操作・判定をCodexの担当として分ける。
+起動失敗をproxy停止と推測したり、sudo/no-sandbox/daemon再起動へ誘導しないことをprompt contractにする。
+
 失敗checkpointは部分成果の観測であって承認ではない。trusted retry baselineとobserved worktreeを
 別フィールドにし、失敗後もbaselineは進めず、observed fingerprint / file count / patch bytesと診断
 checkpointだけを更新する。成功済み実装の後のiteration失敗もrun stateではfailedのまま保持するが、

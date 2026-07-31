@@ -52,11 +52,11 @@ directories are repository-local working state, not durable archives.
 ### Claude Code plugin
 
 The separately versioned thin plugin distributes the operator skill without bundling another CLI.
-Plugin `0.2.2` is verified with core CLI `0.1.0-alpha.5`; install that exact CLI version, then add
+Plugin `0.2.3` is verified with core CLI `0.1.0-alpha.6`; install that exact CLI version, then add
 this public repository as a marketplace:
 
 ```sh
-bun add --global @whatasoda/agent-delegator@0.1.0-alpha.5
+bun add --global @whatasoda/agent-delegator@0.1.0-alpha.6
 claude plugin marketplace add whatasoda/agent-delegator
 claude plugin install agent-delegator@whatasoda-agent-delegator --scope user
 ```
@@ -67,7 +67,7 @@ Run `/reload-plugins` in an existing Claude Code session, then invoke
 ```sh
 claude plugin marketplace update whatasoda-agent-delegator
 claude plugin update agent-delegator@whatasoda-agent-delegator --scope user
-bun add --global @whatasoda/agent-delegator@0.1.0-alpha.5
+bun add --global @whatasoda/agent-delegator@0.1.0-alpha.6
 ```
 
 The plugin checks the exact CLI version and runs `agent-delegator doctor --json` before delegation.
@@ -221,10 +221,19 @@ Workspace-write commands (`implement`, `resume`, `loop`, and `verify`) accept
 `--network-access=inherit|enabled|disabled`. `inherit` is the backward-compatible default and leaves
 the effective Codex configuration unchanged; because agent-delegator cannot prove that effective
 value, its prompt tells Codex the network state is unknown. `enabled` and `disabled` pass an explicit
-Codex workspace-write network setting and record it in state, machine history, and reports. The
-selection is fixed after the first implementation or verification call so resumed sessions do not
-silently change capabilities. Network access does not authorize deploys, uploads, credential
+Codex workspace-write network setting and record it in state, machine history, and reports.
+Implementation/resume/loop share one fixed policy; independent verification chooses and then fixes
+its own policy on its first call. Network access does not authorize deploys, uploads, credential
 changes, or other external mutations.
+
+Use repeatable `--writable-root=<absolute-path>` to grant an existing directory outside the
+repository to one of those workspace-write policies. The CLI canonicalizes and deduplicates roots,
+limits them to 16, and rejects relative/missing/non-directory roots, filesystem or home roots,
+repository-contained paths, and directories broad enough to contain the home or repository. Every
+grant is printed before Codex starts and recorded as an absolute path in state, machine history,
+attempt prompts, and JSON/Markdown reports. A root can still contain credentials or another
+session's browser storage: explicit selection makes that risk reviewable; it does not make the
+contents task-scoped.
 
 For trusted projects, Codex can also load a repository `.codex/config.toml`, for example
 `[sandbox_workspace_write]` with `network_access = true`. Use the explicit agent-delegator option
@@ -232,6 +241,19 @@ when the implementer must receive an exact enabled/disabled statement; otherwise
 configuration remains intentionally reported as inherited/unknown. When disabled, localhost is
 also unavailable inside the sandbox, so the prompts prohibit diagnosing a failed local connection
 as a stopped service.
+
+The same project-local Codex table can declare `writable_roots`, but agent-delegator cannot prove
+which project/user layers were effective. Use `--writable-root` when exact per-run capability and
+later auditability matter. `agent-delegator.project.json` remains evidence-routing policy and does
+not automatically grant host filesystem access from repository content.
+
+The sandbox mode remains `workspace-write`; agent-delegator intentionally has no
+`danger-full-access` delegation switch. On macOS this can prevent launching Chrome even after
+network and writable roots are granted. For UI verification, have Claude start an explicitly named
+browser session, then let Codex attach to that session. Prompts prohibit retries with `sudo`, browser
+`--no-sandbox`, daemon restarts, or discovery of unrelated session artifacts. If no approved session
+handoff exists, Codex reports the browser-launch boundary instead of diagnosing the local service as
+down.
 
 ## Context Request
 
@@ -320,6 +342,7 @@ the Claude skill select different default models without hard-coding model names
 - `AGENT_DELEGATOR_CODEX_HOME` (`shared`, `isolated`, or an absolute default for new runs)
 - `AGENT_DELEGATOR_CODEX_AUTH_STORE` (`auto`, `keyring`, `file`, or `shared-file`)
 - `AGENT_DELEGATOR_NETWORK_ACCESS` (`inherit`, `enabled`, or `disabled` for workspace-write calls)
+- `AGENT_DELEGATOR_WRITABLE_ROOTS` (JSON array of reviewed absolute directories)
 
 These are independent model-selection slots, not automatic cheap/high-quality routing. If neither
 slot is configured, both stages may use the same Codex default model. Cost/quality-based routing is
@@ -492,7 +515,7 @@ stderr log while the original lines stay in `events.jsonl`.
 Observation is designed for trial operation, not only incident debugging. A run records its input
 mix, initial tool identity plus each Codex attempt's tool revision/dirty fingerprint, stage
 durations, retries, model slots, Codex token usage, failure taxonomy, generated-versus-
-approved Brief changes, approval baseline, Codex home/auth/network selection, detached backend/job IDs,
+approved Brief changes, approval baseline, Codex home/auth/network/writable-root selection, detached backend/job IDs,
 verification outcome, and each implementation checkpoint. Checkpoint patches
 include tracked and untracked files; fingerprints also cover untracked file contents.
 

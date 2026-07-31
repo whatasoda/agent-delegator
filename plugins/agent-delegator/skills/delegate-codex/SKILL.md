@@ -22,9 +22,9 @@ description: >-
 
 ## 前提チェック
 
-`agent-delegator --version` が `0.1.0-alpha.5` を返すことを確認してから
+`agent-delegator --version` が `0.1.0-alpha.6` を返すことを確認してから
 `agent-delegator doctor --json` を実行する。CLI が無い、または別バージョンなら
-`bun add --global @whatasoda/agent-delegator@0.1.0-alpha.5`（Bun >= 1.3.0 必須）で、この
+`bun add --global @whatasoda/agent-delegator@0.1.0-alpha.6`（Bun >= 1.3.0 必須）で、この
 operator が検証済みの CLI に揃える。`doctor` が失敗した状態で委譲を開始しない。
 `doctor` の `codex_authentication.authenticated` も確認し、falseなら選択したhome/storeでloginを整える。
 
@@ -73,6 +73,8 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
    networkが必要なローカルproxyや依存取得だけ、ユーザーの意図とBrief境界を確認して
    `--network-access=enabled` を付ける。確実に遮断するtrialは`disabled`、未指定はCodex設定を継承し
    prompt上はunknownになる。network許可はdeploy等の外部mutationを許可しない。
+   repository外のbrowser state/log directoryが必要なら、内容と他sessionへの影響をレビューして
+   `--writable-root=<absolute-path>`を必要最小限だけ繰り返す。home全体やrepositoryの親は指定しない。
    別セッション・別ターミナルから待つ場合は `agent-delegator wait --run <id>`。
    長時間の bounded 改善を任せる場合は、implement の代わりに
    `agent-delegator loop --run <id> --max-turns=<n> --max-minutes=<n>`。approved run では初回実装も
@@ -95,6 +97,8 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
    される。消えた worktree の runs dir は unavailable として表示される）。
    最小状態履歴は `agent-delegator history` で任意のローカルディレクトリから確認できる。
    `post_implementation_iteration_failures` はinitial implementation failureと分けて評価する。
+   implementationとverifyのnetwork/root policyは別に記録される。権限を広げたrunはroot別breakdownも
+   確認する。
 
 ## 長時間実行とCodex領域
 
@@ -131,6 +135,9 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
   `gate_rejections` に記録され、報告に出る）。
 - failed checkpointでは`lastWorktreeSha256`はtrusted baselineのまま、`observedWorktreeSha256`と
   changed-file count/patch bytesだけが進む。`--allow-worktree-change`時のstderr summaryを確認する。
+- UI検証でChrome起動がsandboxに拒否されたら、sudo、`--no-sandbox`、proxy/daemon再起動を試さない。
+  owner側で明示名のbrowser sessionを起動し、そのsessionだけへCodexを接続させる。関連のないsession
+  artifactを探索させない。`danger-full-access`へ上げる委譲経路はない。
 - Codex stderr は `attempts/*/stderr.log` に保存済み。デバッグ時のみ
   `AGENT_DELEGATOR_STREAM_CODEX_STDERR=1` でライブ表示。
 - Codex が標準名で見つからない環境は `AGENT_DELEGATOR_CODEX_COMMAND=/absolute/path/to/codex`。

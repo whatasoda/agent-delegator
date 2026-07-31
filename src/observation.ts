@@ -311,7 +311,14 @@ export interface RunObservationSummary {
   failure_phase: string | null;
   implementation_completed_before_iteration_failure: boolean;
   verification_status: "passed" | "failed" | "partial" | "not-run" | null;
-  codex_environment: { mode: string; auth_store: string; network_access: string };
+  codex_environment: {
+    mode: string;
+    auth_store: string;
+    network_access: string;
+    writable_roots: string[];
+    verification_network_access: string | null;
+    verification_writable_roots: string[];
+  };
   detached_execution: { jobs: number; backends: string[]; job_ids: string[] };
   metadata: TaskMetadata;
   created_at: string;
@@ -404,6 +411,9 @@ export async function buildRunObservation(runDir: string): Promise<RunObservatio
       mode: state.codexHomeMode ?? "shared",
       auth_store: state.codexAuthStore ?? "auto",
       network_access: state.workspaceWriteNetworkAccess ?? "inherit",
+      writable_roots: state.workspaceWriteWritableRoots ?? [],
+      verification_network_access: state.verificationNetworkAccess ?? null,
+      verification_writable_roots: state.verificationWritableRoots ?? [],
     },
     detached_execution: {
       jobs: new Set(events.flatMap((event) => event.metrics.headless_job_id ? [event.metrics.headless_job_id] : [])).size,
@@ -534,6 +544,9 @@ export interface ObservationReport {
     codex_home_mode: Record<string, number>;
     codex_auth_store: Record<string, number>;
     workspace_write_network_access: Record<string, number>;
+    workspace_write_writable_root: Record<string, number>;
+    verification_network_access: Record<string, number>;
+    verification_writable_root: Record<string, number>;
     execution_backend: Record<string, number>;
     delegation_pattern: Record<string, number>;
     experiment_variant: Record<string, number>;
@@ -674,7 +687,9 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
     implementation_quality: {}, communication_quality: {}, failure_category: {}, compiler_model: {},
     failure_phase: {},
     implementation_model: {}, research_model: {}, verification_model: {}, verification_status: {},
-    codex_home_mode: {}, codex_auth_store: {}, workspace_write_network_access: {}, execution_backend: {},
+    codex_home_mode: {}, codex_auth_store: {}, workspace_write_network_access: {},
+    workspace_write_writable_root: {}, verification_network_access: {}, verification_writable_root: {},
+    execution_backend: {},
     delegation_pattern: {}, experiment_variant: {},
     autonomous_stop_reason: {}, delegator_revision: {},
   };
@@ -691,6 +706,21 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
     increment(breakdowns.codex_home_mode, run.codex_environment.mode);
     increment(breakdowns.codex_auth_store, run.codex_environment.auth_store);
     increment(breakdowns.workspace_write_network_access, run.codex_environment.network_access);
+    if (run.codex_environment.writable_roots.length) {
+      for (const root of run.codex_environment.writable_roots) increment(breakdowns.workspace_write_writable_root, root);
+    } else {
+      increment(breakdowns.workspace_write_writable_root, "none-explicit");
+    }
+    if (run.attempts.verify !== undefined) {
+      increment(breakdowns.verification_network_access, run.codex_environment.verification_network_access);
+      if (run.codex_environment.verification_writable_roots.length) {
+        for (const root of run.codex_environment.verification_writable_roots) {
+          increment(breakdowns.verification_writable_root, root);
+        }
+      } else {
+        increment(breakdowns.verification_writable_root, "none-explicit");
+      }
+    }
     for (const backend of run.detached_execution.backends) increment(breakdowns.execution_backend, backend);
     increment(breakdowns.delegation_pattern, run.delegation_pattern);
     increment(breakdowns.experiment_variant, run.experiment_variant);
@@ -864,6 +894,18 @@ ${breakdownRows(report.breakdowns.codex_auth_store)}
 | --- | ---: |
 ${breakdownRows(report.breakdowns.workspace_write_network_access)}
 
+| Implementation extra writable root | Runs |
+| --- | ---: |
+${breakdownRows(report.breakdowns.workspace_write_writable_root)}
+
+| Verification network | Runs |
+| --- | ---: |
+${breakdownRows(report.breakdowns.verification_network_access)}
+
+| Verification extra writable root | Runs |
+| --- | ---: |
+${breakdownRows(report.breakdowns.verification_writable_root)}
+
 ## Pattern comparison
 
 | Pattern | Runs | Evaluated | Accepted | Codex calls | Input / cached / output tokens | Interactions | Review bytes | Implementation / research rating |
@@ -898,7 +940,7 @@ ${breakdownRows(report.breakdowns.failure_phase)}
 
 | Run | Pattern | Variant | Type | Complexity | Status | Verify | Detached | Codex state | Brief edits | Gate rejections | Outcome |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-${report.runs.map((run) => `| ${markdownCell(run.run_id)} | ${markdownCell(run.delegation_pattern)} | ${markdownCell(run.experiment_variant ?? "-")} | ${markdownCell(run.metadata.task_type)} | ${markdownCell(run.metadata.complexity)} | ${markdownCell(run.salvaged_after_failure ? `${run.status} (salvaged)` : run.implementation_completed_before_iteration_failure ? `${run.status} (implementation completed; iterate failed)` : run.status)} | ${markdownCell(run.verification_status ?? "-")} | ${markdownCell(run.detached_execution.backends.join(",") || "-")} | ${markdownCell(`${run.codex_environment.mode}/${run.codex_environment.auth_store}/${run.codex_environment.network_access}`)} | ${run.brief_json_difference_count ?? "n/a"} | ${run.controller_cost.gate_rejections} | ${markdownCell(run.evaluation?.outcome ?? "not-evaluated")} |`).join("\n")}
+${report.runs.map((run) => `| ${markdownCell(run.run_id)} | ${markdownCell(run.delegation_pattern)} | ${markdownCell(run.experiment_variant ?? "-")} | ${markdownCell(run.metadata.task_type)} | ${markdownCell(run.metadata.complexity)} | ${markdownCell(run.salvaged_after_failure ? `${run.status} (salvaged)` : run.implementation_completed_before_iteration_failure ? `${run.status} (implementation completed; iterate failed)` : run.status)} | ${markdownCell(run.verification_status ?? "-")} | ${markdownCell(run.detached_execution.backends.join(",") || "-")} | ${markdownCell(`${run.codex_environment.mode}/${run.codex_environment.auth_store}/impl:${run.codex_environment.network_access}+${run.codex_environment.writable_roots.length}roots/verify:${run.codex_environment.verification_network_access ?? "-"}+${run.codex_environment.verification_writable_roots.length}roots`)} | ${run.brief_json_difference_count ?? "n/a"} | ${run.controller_cost.gate_rejections} | ${markdownCell(run.evaluation?.outcome ?? "not-evaluated")} |`).join("\n")}
 
 ${directoriesSection(report)}${report.invalid_runs.length ? `## Invalid runs\n\n${report.invalid_runs.map((item) => `- ${item.run_dir}: ${item.error}`).join("\n")}\n` : ""}`;
 }

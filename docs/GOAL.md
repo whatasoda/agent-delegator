@@ -223,6 +223,11 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
   表示。Codex JSONL失敗診断、iteration-after-successの別集計、repo root/failure phase投影も追加。
   fuzzy citationの自動採用はexact-evidence境界を弱めるため不採用としcompiler指示だけ強化。
   （2026-07-30 done）
+- [x] P5-24: UI verification field feedback — repeatableなrun単位`--writable-root`を追加し、広すぎる
+  rootを拒否、実装と独立verifyのsandbox policyを分離してstate/history/reportへ記録。sandbox modeと
+  network/rootの実効認識をpromptへ明示し、Chrome起動失敗時はsudo/no-sandbox/daemon再起動をせず、
+  ownerが起動した明示sessionへの接続へ分業する。danger-full-access選択とprofileからの自動権限付与は
+  既存trust boundaryを壊すため不採用。（2026-07-31 done）
 
 ### Trial — 実業務リポジトリ検証
 

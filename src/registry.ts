@@ -39,7 +39,14 @@ export interface RunHistoryEntry {
   implementation_completed_before_iteration_failure?: boolean;
   salvaged?: boolean;
   autonomous_stop_reason?: string | null;
-  codex_environment?: { mode: string; auth_store: string; network_access?: string };
+  codex_environment?: {
+    mode: string;
+    auth_store: string;
+    network_access?: string;
+    writable_roots?: string[];
+    verification_network_access?: string | null;
+    verification_writable_roots?: string[];
+  };
   evaluation?: {
     recorded_at: string;
     outcome: string;

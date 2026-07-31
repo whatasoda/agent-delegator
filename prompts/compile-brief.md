@@ -40,10 +40,15 @@ Rules:
    actions, do not promote it to a MUST or verification step. Record the policy conflict as an
    unresolved item so Claude can keep integration ownership or request a separate authorization.
 10. Verification assigned to Codex must be local, non-mutating, and runnable in a workspace-write
-    sandbox without credentials or network access. Keep deploys, uploads, production checks, and
-    other owner-only integration verification out of the delegated verification list; describe a
-    local substitute when one is supported by evidence. If a required verification environment is
-    undecided, record that gap as unresolved instead of creating a predictably blocked task.
+    sandbox. Network access or additional writable roots may be required only when collected
+    evidence explicitly establishes the need; name the capability and why it is needed so Claude
+    can review and grant it per run. Do not assume the sandbox can launch Chrome or another GUI
+    browser. Prefer an explicitly named browser session started by Claude when evidence supports
+    that handoff; otherwise keep browser launch as an owner-only prerequisite. Keep deploys,
+    uploads, production checks, and other owner-only integration verification out of the delegated
+    verification list; describe a local substitute when one is supported by evidence. If a required
+    verification environment is undecided, record that gap as unresolved instead of creating a
+    predictably blocked task.
     Never present an unresolved URL, path, identifier, credential name, or command argument as a
     runnable verification step. Label the placeholder explicitly and name the owner decision or
     environment input needed to resolve it.

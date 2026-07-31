@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## [0.1.0-alpha.6] - 2026-07-31
+
+### Added
+
+- Added repeatable, validated per-run extra writable roots for workspace-write implementation and
+  verification, with state, history, prompt, and report observability.
+- Added explicit UI-verification handoff guidance for attaching to an owner-started browser session.
+
+### Changed
+
+- Split implementation and independent-verification sandbox policies so verification can choose
+  different network and writable-root capabilities without changing a resumable implementation.
+- Make every workspace-write prompt state its sandbox mode and prevent Chrome launch failures from
+  being misdiagnosed as stopped local services or remediated with sudo/daemon restarts.
+
 ## [0.1.0-alpha.5] - 2026-07-30
 
 ### Added

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import packageJson from "../package.json";
@@ -634,24 +634,36 @@ describe("agent-delegator CLI", () => {
       { ...env, FAKE_CODEX_IMPLEMENT_COMPLETED: "1" },
     );
 
-    const verified = await run(["verify", "--run", "verification-flow", "--runs-dir", runs], repo, env);
+    const verified = await run(
+      ["verify", "--run", "verification-flow", "--runs-dir", runs, "--network-access", "disabled"],
+      repo,
+      env,
+    );
     expect(verified.exitCode).toBe(0);
     expect(JSON.parse(verified.stdout)).toMatchObject({ status: "completed", verification_status: "passed" });
     const verification = JSON.parse(await readFile(join(runs, "verification-flow", "verification.json"), "utf8"));
     expect(verification.policy_sources).toEqual(["AGENTS.md", "package.json"]);
     const calls = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]);
     expect(calls.at(-1)).toContain("workspace-write");
-    expect(calls.at(-1)).toContain("sandbox_workspace_write.network_access=true");
+    expect(calls.at(-1)).toContain("sandbox_workspace_write.network_access=false");
     expect(calls.at(-1)?.at(-1)).toContain("repository's own durable policy");
-    expect(calls.at(-1)?.at(-1)).toContain("Sandbox network access: ENABLED");
+    expect(calls.at(-1)?.at(-1)).toContain("Sandbox mode: workspace-write");
+    expect(calls.at(-1)?.at(-1)).toContain("Sandbox network access: DISABLED");
+    const separatedPolicyState = JSON.parse(
+      await readFile(join(runs, "verification-flow", "state.json"), "utf8"),
+    );
+    expect(separatedPolicyState).toMatchObject({
+      workspaceWriteNetworkAccess: "enabled",
+      verificationNetworkAccess: "disabled",
+    });
 
     const changedNetwork = await run(
-      ["verify", "--run", "verification-flow", "--runs-dir", runs, "--network-access", "disabled"],
+      ["verify", "--run", "verification-flow", "--runs-dir", runs, "--network-access", "enabled"],
       repo,
       env,
     );
     expect(changedNetwork.exitCode).toBe(1);
-    expect(changedNetwork.stderr).toContain("network access is fixed");
+    expect(changedNetwork.stderr).toContain("Verification workspace-write policy is fixed");
 
     const mutated = await run(
       ["verify", "--run", "verification-flow", "--runs-dir", runs],
@@ -1274,6 +1286,89 @@ describe("agent-delegator CLI", () => {
     const args = JSON.parse((await readFile(log, "utf8")).trim()) as string[];
     expect(args).toContain("--config");
     expect(args).toContain('cli_auth_credentials_store="keyring"');
+  });
+
+  test("grants and records narrow extra writable roots for a workspace-write session", async () => {
+    const { repo, runs, transcript, env, log } = await fixture();
+    const browserState = join(resolve(repo, ".."), "browser-state");
+    const smokeLogs = join(resolve(repo, ".."), "smoke-logs");
+    await mkdir(browserState);
+    await mkdir(smokeLogs);
+    const writableRoots = [await realpath(browserState), await realpath(smokeLogs)].sort();
+    await run(
+      [
+        "compile", "--objective", "UI verification handoff", "--transcript", transcript,
+        "--runs-dir", runs, "--run-id", "writable-roots",
+      ],
+      repo,
+      env,
+    );
+    await run(["approve", "--run", "writable-roots", "--runs-dir", runs, "--allow-unresolved"], repo, env);
+
+    const implemented = await run(
+      [
+        "implement", "--run", "writable-roots", "--runs-dir", runs,
+        "--writable-root", smokeLogs, `--writable-root=${browserState}`,
+      ],
+      repo,
+      env,
+    );
+
+    expect(implemented.exitCode).toBe(0);
+    expect(implemented.stderr).toContain("grants workspace-write access to 2 extra root(s)");
+    const state = JSON.parse(await readFile(join(runs, "writable-roots", "state.json"), "utf8"));
+    expect(state.workspaceWriteWritableRoots).toEqual(writableRoots);
+    const calls = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]);
+    expect(calls.at(-1)).toContain(
+      `sandbox_workspace_write.writable_roots=${JSON.stringify(writableRoots)}`,
+    );
+    expect(calls.at(-1)?.at(-1)).toContain("Sandbox mode: workspace-write");
+    expect(calls.at(-1)?.at(-1)).toContain("may prevent launching Chrome");
+    expect(calls.at(-1)?.at(-1)).toContain(writableRoots[0]!);
+
+    const resumed = await run(
+      ["resume", "--run", "writable-roots", "--runs-dir", runs, "--message=Use the existing browser session."],
+      repo,
+      env,
+    );
+    expect(resumed.exitCode).toBe(0);
+    const resumedCalls = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]);
+    expect(resumedCalls.at(-1)).toContain(
+      `sandbox_workspace_write.writable_roots=${JSON.stringify(writableRoots)}`,
+    );
+
+    const report = await run(["report", "--runs-dir", runs, "--format", "json"], repo, env);
+    const reportValue = JSON.parse(report.stdout);
+    expect(reportValue.runs[0].codex_environment.writable_roots).toEqual(writableRoots);
+    expect(reportValue.breakdowns.workspace_write_writable_root).toMatchObject({
+      [writableRoots[0]!]: 1,
+      [writableRoots[1]!]: 1,
+    });
+  });
+
+  test("rejects broad, relative, and missing writable roots before Codex execution", async () => {
+    const { repo, runs, transcript, env, log } = await fixture();
+    await run(
+      ["compile", "--objective=Writable root guard", "--transcript", transcript, "--runs-dir", runs, "--run-id", "root-guard"],
+      repo,
+      env,
+    );
+    await run(["approve", "--run", "root-guard", "--runs-dir", runs, "--allow-unresolved"], repo, env);
+
+    for (const [root, message] of [
+      ["relative-state", "must be absolute"],
+      [resolve(repo, "missing-state"), "must name an existing directory"],
+      ["~", "too broad"],
+    ] as const) {
+      const rejected = await run(
+        ["implement", "--run", "root-guard", "--runs-dir", runs, "--writable-root", root],
+        repo,
+        env,
+      );
+      expect(rejected.exitCode).toBe(1);
+      expect(rejected.stderr).toContain(message);
+    }
+    expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(1);
   });
 
   test("wait settles immediately on inactive runs and recovers dead controllers", async () => {

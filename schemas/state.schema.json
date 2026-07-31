@@ -92,11 +92,24 @@
     "codexHome": { "type": ["string", "null"] },
     "codexAuthStore": { "type": "string", "enum": ["auto", "keyring", "file", "shared-file"] },
     "workspaceWriteNetworkAccess": { "type": "string", "enum": ["inherit", "enabled", "disabled"] },
+    "workspaceWriteWritableRoots": {
+      "type": "array",
+      "maxItems": 16,
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
     "verificationModel": { "type": ["string", "null"] },
     "verificationSessionId": { "type": ["string", "null"] },
     "verificationCount": { "type": "integer", "minimum": 0 },
     "latestVerificationPath": { "type": ["string", "null"] },
     "verificationStatus": { "type": ["string", "null"], "enum": ["passed", "failed", "partial", "not-run", null] },
-    "verificationFailure": { "type": ["string", "null"] }
+    "verificationFailure": { "type": ["string", "null"] },
+    "verificationNetworkAccess": { "type": "string", "enum": ["inherit", "enabled", "disabled"] },
+    "verificationWritableRoots": {
+      "type": "array",
+      "maxItems": 16,
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    }
   }
 }

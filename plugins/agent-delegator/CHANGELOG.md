@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3 - 2026-07-31
+
+- Updated the exact core CLI compatibility preflight to `0.1.0-alpha.6`.
+- Added operator guidance for reviewed writable roots and owner-started browser-session handoff.
+
 ## 0.2.2 - 2026-07-30
 
 - Updated the exact core CLI compatibility preflight to `0.1.0-alpha.5`.
