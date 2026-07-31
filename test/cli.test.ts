@@ -635,7 +635,10 @@ describe("agent-delegator CLI", () => {
     );
 
     const verified = await run(
-      ["verify", "--run", "verification-flow", "--runs-dir", runs, "--network-access", "disabled"],
+      [
+        "verify", "--run", "verification-flow", "--runs-dir", runs,
+        "--network-access", "disabled", "--ui-session", "verification-browser-1",
+      ],
       repo,
       env,
     );
@@ -649,13 +652,31 @@ describe("agent-delegator CLI", () => {
     expect(calls.at(-1)?.at(-1)).toContain("repository's own durable policy");
     expect(calls.at(-1)?.at(-1)).toContain("Sandbox mode: workspace-write");
     expect(calls.at(-1)?.at(-1)).toContain("Sandbox network access: DISABLED");
+    expect(calls.at(-1)?.at(-1)).toContain('session "verification-browser-1"');
     const separatedPolicyState = JSON.parse(
       await readFile(join(runs, "verification-flow", "state.json"), "utf8"),
     );
     expect(separatedPolicyState).toMatchObject({
       workspaceWriteNetworkAccess: "enabled",
       verificationNetworkAccess: "disabled",
+      verificationUiSession: "verification-browser-1",
+      verificationUiSessions: ["verification-browser-1"],
     });
+
+    const clearedHandoff = await run(
+      [
+        "verify", "--run", "verification-flow", "--runs-dir", runs,
+        "--network-access", "disabled", "--ui-session", "none",
+      ],
+      repo,
+      env,
+    );
+    expect(clearedHandoff.exitCode).toBe(0);
+    const clearedState = JSON.parse(await readFile(join(runs, "verification-flow", "state.json"), "utf8"));
+    expect(clearedState.verificationUiSession).toBeNull();
+    expect(clearedState.verificationUiSessions).toEqual(["verification-browser-1"]);
+    const clearedCalls = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]);
+    expect(clearedCalls.at(-1)?.at(-1)).toContain("UI session handoff: none was declared");
 
     const changedNetwork = await run(
       ["verify", "--run", "verification-flow", "--runs-dir", runs, "--network-access", "enabled"],
@@ -673,7 +694,7 @@ describe("agent-delegator CLI", () => {
     expect(mutated.exitCode).toBe(1);
     expect(mutated.stderr).toContain("worktree changed during delegated verification");
     const state = JSON.parse(await readFile(join(runs, "verification-flow", "state.json"), "utf8"));
-    expect(state).toMatchObject({ status: "completed", verificationStatus: null, verificationCount: 2 });
+    expect(state).toMatchObject({ status: "completed", verificationStatus: null, verificationCount: 3 });
     expect(state.verificationFailure).toContain("worktree changed during delegated verification");
   });
 
@@ -1309,6 +1330,7 @@ describe("agent-delegator CLI", () => {
       [
         "implement", "--run", "writable-roots", "--runs-dir", runs,
         "--writable-root", smokeLogs, `--writable-root=${browserState}`,
+        "--ui-session", "dashboard-smoke-1",
       ],
       repo,
       env,
@@ -1316,8 +1338,11 @@ describe("agent-delegator CLI", () => {
 
     expect(implemented.exitCode).toBe(0);
     expect(implemented.stderr).toContain("grants workspace-write access to 2 extra root(s)");
+    expect(implemented.stderr).toContain("owner-declared UI session dashboard-smoke-1");
     const state = JSON.parse(await readFile(join(runs, "writable-roots", "state.json"), "utf8"));
     expect(state.workspaceWriteWritableRoots).toEqual(writableRoots);
+    expect(state.workspaceWriteUiSession).toBe("dashboard-smoke-1");
+    expect(state.workspaceWriteUiSessions).toEqual(["dashboard-smoke-1"]);
     const calls = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as string[]);
     expect(calls.at(-1)).toContain(
       `sandbox_workspace_write.writable_roots=${JSON.stringify(writableRoots)}`,
@@ -1325,9 +1350,14 @@ describe("agent-delegator CLI", () => {
     expect(calls.at(-1)?.at(-1)).toContain("Sandbox mode: workspace-write");
     expect(calls.at(-1)?.at(-1)).toContain("may prevent launching Chrome");
     expect(calls.at(-1)?.at(-1)).toContain(writableRoots[0]!);
+    expect(calls.at(-1)?.at(-1)).toContain('session "dashboard-smoke-1"');
+    expect(calls.at(-1)?.at(-1)).toContain("do not launch another browser");
 
     const resumed = await run(
-      ["resume", "--run", "writable-roots", "--runs-dir", runs, "--message=Use the existing browser session."],
+      [
+        "resume", "--run", "writable-roots", "--runs-dir", runs,
+        "--message=Use the existing browser session.", "--ui-session=dashboard-smoke-2",
+      ],
       repo,
       env,
     );
@@ -1336,13 +1366,25 @@ describe("agent-delegator CLI", () => {
     expect(resumedCalls.at(-1)).toContain(
       `sandbox_workspace_write.writable_roots=${JSON.stringify(writableRoots)}`,
     );
+    expect(resumedCalls.at(-1)?.at(-1)).toContain('session "dashboard-smoke-2"');
+    const resumedState = JSON.parse(await readFile(join(runs, "writable-roots", "state.json"), "utf8"));
+    expect(resumedState.workspaceWriteUiSession).toBe("dashboard-smoke-2");
+    expect(resumedState.workspaceWriteUiSessions).toEqual(["dashboard-smoke-1", "dashboard-smoke-2"]);
 
     const report = await run(["report", "--runs-dir", runs, "--format", "json"], repo, env);
     const reportValue = JSON.parse(report.stdout);
     expect(reportValue.runs[0].codex_environment.writable_roots).toEqual(writableRoots);
+    expect(reportValue.runs[0].codex_environment.ui_session).toBe("dashboard-smoke-2");
+    expect(reportValue.runs[0].codex_environment.ui_sessions).toEqual([
+      "dashboard-smoke-1", "dashboard-smoke-2",
+    ]);
     expect(reportValue.breakdowns.workspace_write_writable_root).toMatchObject({
       [writableRoots[0]!]: 1,
       [writableRoots[1]!]: 1,
+    });
+    expect(reportValue.breakdowns.implementation_ui_session_handoff).toEqual({
+      "dashboard-smoke-1": 1,
+      "dashboard-smoke-2": 1,
     });
   });
 
@@ -1368,6 +1410,13 @@ describe("agent-delegator CLI", () => {
       expect(rejected.exitCode).toBe(1);
       expect(rejected.stderr).toContain(message);
     }
+    const invalidSession = await run(
+      ["implement", "--run", "root-guard", "--runs-dir", runs, "--ui-session", "bad session"],
+      repo,
+      env,
+    );
+    expect(invalidSession.exitCode).toBe(1);
+    expect(invalidSession.stderr).toContain("--ui-session must be none");
     expect((await readFile(log, "utf8")).trim().split("\n")).toHaveLength(1);
   });
 

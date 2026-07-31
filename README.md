@@ -52,11 +52,11 @@ directories are repository-local working state, not durable archives.
 ### Claude Code plugin
 
 The separately versioned thin plugin distributes the operator skill without bundling another CLI.
-Plugin `0.2.3` is verified with core CLI `0.1.0-alpha.6`; install that exact CLI version, then add
+Plugin `0.2.4` is verified with core CLI `0.1.0-alpha.7`; install that exact CLI version, then add
 this public repository as a marketplace:
 
 ```sh
-bun add --global @whatasoda/agent-delegator@0.1.0-alpha.6
+bun add --global @whatasoda/agent-delegator@0.1.0-alpha.7
 claude plugin marketplace add whatasoda/agent-delegator
 claude plugin install agent-delegator@whatasoda-agent-delegator --scope user
 ```
@@ -67,7 +67,7 @@ Run `/reload-plugins` in an existing Claude Code session, then invoke
 ```sh
 claude plugin marketplace update whatasoda-agent-delegator
 claude plugin update agent-delegator@whatasoda-agent-delegator --scope user
-bun add --global @whatasoda/agent-delegator@0.1.0-alpha.6
+bun add --global @whatasoda/agent-delegator@0.1.0-alpha.7
 ```
 
 The plugin checks the exact CLI version and runs `agent-delegator doctor --json` before delegation.
@@ -249,11 +249,23 @@ not automatically grant host filesystem access from repository content.
 
 The sandbox mode remains `workspace-write`; agent-delegator intentionally has no
 `danger-full-access` delegation switch. On macOS this can prevent launching Chrome even after
-network and writable roots are granted. For UI verification, have Claude start an explicitly named
-browser session, then let Codex attach to that session. Prompts prohibit retries with `sudo`, browser
-`--no-sandbox`, daemon restarts, or discovery of unrelated session artifacts. If no approved session
-handoff exists, Codex reports the browser-launch boundary instead of diagnosing the local service as
-down.
+network and writable roots are granted. A trusted project's `.codex/config.toml` can contain a
+different `sandbox_mode`, but the delegator's explicit CLI mode preserves this invariant. Repository
+content must not silently remove the host boundary for a non-interactive or detached run.
+
+For UI verification, have Claude start an explicitly named browser session, then pass
+`--ui-session=<name>` to `implement`, `resume`, `loop`, or `verify`. The name is validated, printed,
+included in the attempt prompt, and recorded separately for implementation and verification in
+state, machine history, and JSON/Markdown reports. Later calls inherit the current name; passing a
+new name records both handoffs, while `--ui-session=none` clears the current handoff without erasing
+its audit history. A declaration is not a liveness check. Codex uses the repository-documented attach
+mechanism with that exact name and must not launch another browser or discover other sessions.
+
+This supports an unattended run when Claude starts a browser that survives its terminal and then
+launches `loop --detach --ui-session=<name>`. Prompts prohibit retries with `sudo`, browser
+`--no-sandbox`, daemon restarts, or discovery of unrelated session artifacts. Without an explicit
+handoff, Codex reports the owner-side prerequisite and required attach mechanism instead of
+diagnosing the local service as down.
 
 ## Context Request
 
@@ -343,6 +355,7 @@ the Claude skill select different default models without hard-coding model names
 - `AGENT_DELEGATOR_CODEX_AUTH_STORE` (`auto`, `keyring`, `file`, or `shared-file`)
 - `AGENT_DELEGATOR_NETWORK_ACCESS` (`inherit`, `enabled`, or `disabled` for workspace-write calls)
 - `AGENT_DELEGATOR_WRITABLE_ROOTS` (JSON array of reviewed absolute directories)
+- `AGENT_DELEGATOR_UI_SESSION` (owner-started UI session name, or `none` to clear the current handoff)
 
 These are independent model-selection slots, not automatic cheap/high-quality routing. If neither
 slot is configured, both stages may use the same Codex default model. Cost/quality-based routing is
@@ -515,7 +528,7 @@ stderr log while the original lines stay in `events.jsonl`.
 Observation is designed for trial operation, not only incident debugging. A run records its input
 mix, initial tool identity plus each Codex attempt's tool revision/dirty fingerprint, stage
 durations, retries, model slots, Codex token usage, failure taxonomy, generated-versus-
-approved Brief changes, approval baseline, Codex home/auth/network/writable-root selection, detached backend/job IDs,
+approved Brief changes, approval baseline, Codex home/auth/network/writable-root/UI-session selection, detached backend/job IDs,
 verification outcome, and each implementation checkpoint. Checkpoint patches
 include tracked and untracked files; fingerprints also cover untracked file contents.
 

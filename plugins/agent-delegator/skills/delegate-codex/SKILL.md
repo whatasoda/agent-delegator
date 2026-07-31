@@ -22,9 +22,9 @@ description: >-
 
 ## 前提チェック
 
-`agent-delegator --version` が `0.1.0-alpha.6` を返すことを確認してから
+`agent-delegator --version` が `0.1.0-alpha.7` を返すことを確認してから
 `agent-delegator doctor --json` を実行する。CLI が無い、または別バージョンなら
-`bun add --global @whatasoda/agent-delegator@0.1.0-alpha.6`（Bun >= 1.3.0 必須）で、この
+`bun add --global @whatasoda/agent-delegator@0.1.0-alpha.7`（Bun >= 1.3.0 必須）で、この
 operator が検証済みの CLI に揃える。`doctor` が失敗した状態で委譲を開始しない。
 `doctor` の `codex_authentication.authenticated` も確認し、falseなら選択したhome/storeでloginを整える。
 
@@ -75,6 +75,9 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
    prompt上はunknownになる。network許可はdeploy等の外部mutationを許可しない。
    repository外のbrowser state/log directoryが必要なら、内容と他sessionへの影響をレビューして
    `--writable-root=<absolute-path>`を必要最小限だけ繰り返す。home全体やrepositoryの親は指定しない。
+   UI検証ではowner側でterminal非依存の明示名browser sessionを先に起動し、
+   `--ui-session=<name>`を渡す。Codexにはrepository既定の接続手順でその名前だけを使わせる。
+   sessionを交換するresume/loop/verifyでは新しい名前を明示し、handoffを外す場合は`none`を渡す。
    別セッション・別ターミナルから待つ場合は `agent-delegator wait --run <id>`。
    長時間の bounded 改善を任せる場合は、implement の代わりに
    `agent-delegator loop --run <id> --max-turns=<n> --max-minutes=<n>`。approved run では初回実装も
@@ -98,7 +101,7 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
    最小状態履歴は `agent-delegator history` で任意のローカルディレクトリから確認できる。
    `post_implementation_iteration_failures` はinitial implementation failureと分けて評価する。
    implementationとverifyのnetwork/root policyは別に記録される。権限を広げたrunはroot別breakdownも
-   確認する。
+   確認する。UI session handoffは現在値だけでなくrun中に宣言した全sessionのbreakdownを確認する。
 
 ## 長時間実行とCodex領域
 
@@ -136,8 +139,10 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
 - failed checkpointでは`lastWorktreeSha256`はtrusted baselineのまま、`observedWorktreeSha256`と
   changed-file count/patch bytesだけが進む。`--allow-worktree-change`時のstderr summaryを確認する。
 - UI検証でChrome起動がsandboxに拒否されたら、sudo、`--no-sandbox`、proxy/daemon再起動を試さない。
-  owner側で明示名のbrowser sessionを起動し、そのsessionだけへCodexを接続させる。関連のないsession
-  artifactを探索させない。`danger-full-access`へ上げる委譲経路はない。
+  owner側で明示名のbrowser sessionを起動して`--ui-session=<name>`で宣言し、そのsessionだけへCodexを
+  接続させる。宣言はliveness確認ではない。関連のないsession artifactを探索させない。
+  長時間無人runはsessionがterminal終了後も残ることをowner側で確認してから`loop --detach`へ渡す。
+  `danger-full-access`へ上げる委譲経路はない。
 - Codex stderr は `attempts/*/stderr.log` に保存済み。デバッグ時のみ
   `AGENT_DELEGATOR_STREAM_CODEX_STDERR=1` でライブ表示。
 - Codex が標準名で見つからない環境は `AGENT_DELEGATOR_CODEX_COMMAND=/absolute/path/to/codex`。

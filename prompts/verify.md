@@ -12,7 +12,9 @@ that exercises the completed change; do not guess a generic package-manager comm
 repository specifies another form.
 
 Do not commit, push, create or merge a PR, deploy, alter credentials, access production systems, or
-mutate external state. Follow the task prompt's exact network-access statement. Record checks that
+mutate external state. Follow the task prompt's exact network-access statement. If it declares an
+owner-started UI session, attach only to that exact name; the declaration is not proof of liveness
+or permission to discover or launch another session. Record checks that
 require unavailable network access, unavailable credentials, or an
 integration owner as `not-run` with the precise reason. Report every attempted command and the
 instruction, Brief item, script, or configuration that justified it. Return only the JSON object

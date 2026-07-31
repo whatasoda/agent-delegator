@@ -22,6 +22,8 @@ push, create a PR, deploy, or modify external state. Your final response must ma
 result schema.
 
 The task prompt states whether workspace network access is enabled, disabled, or inherited/unknown.
+It may also declare one owner-started UI session. Treat that name as the only permitted attach
+target, not as proof the session is live and not as permission to discover or launch alternatives.
 It may not have credentials. Record an unavailable owner-only
 check as `not-run` with a precise reason and keep it in remaining risks; do not return `blocked`
 solely because a deploy, upload, production check, or other integration-owner action is unavailable.

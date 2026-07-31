@@ -74,6 +74,8 @@ export interface RunState {
   codexAuthStore?: CodexAuthStore;
   workspaceWriteNetworkAccess?: "inherit" | "enabled" | "disabled";
   workspaceWriteWritableRoots?: string[];
+  workspaceWriteUiSession?: string | null;
+  workspaceWriteUiSessions?: string[];
   verificationModel?: string | null;
   verificationSessionId?: string | null;
   verificationCount?: number;
@@ -82,6 +84,8 @@ export interface RunState {
   verificationFailure?: string | null;
   verificationNetworkAccess?: "inherit" | "enabled" | "disabled";
   verificationWritableRoots?: string[];
+  verificationUiSession?: string | null;
+  verificationUiSessions?: string[];
 }
 
 export function observedRunModels(state: RunState): {
@@ -205,8 +209,12 @@ export async function writeRunState(runDir: string, state: RunState): Promise<vo
       auth_store: state.codexAuthStore ?? "auto",
       network_access: state.workspaceWriteNetworkAccess ?? "inherit",
       writable_roots: state.workspaceWriteWritableRoots ?? [],
+      ui_session: state.workspaceWriteUiSession ?? null,
+      ui_sessions: state.workspaceWriteUiSessions ?? [],
       verification_network_access: state.verificationNetworkAccess ?? null,
       verification_writable_roots: state.verificationWritableRoots ?? [],
+      verification_ui_session: state.verificationUiSession ?? null,
+      verification_ui_sessions: state.verificationUiSessions ?? [],
     },
     evaluation,
   });

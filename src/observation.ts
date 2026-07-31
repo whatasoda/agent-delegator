@@ -316,8 +316,12 @@ export interface RunObservationSummary {
     auth_store: string;
     network_access: string;
     writable_roots: string[];
+    ui_session: string | null;
+    ui_sessions: string[];
     verification_network_access: string | null;
     verification_writable_roots: string[];
+    verification_ui_session: string | null;
+    verification_ui_sessions: string[];
   };
   detached_execution: { jobs: number; backends: string[]; job_ids: string[] };
   metadata: TaskMetadata;
@@ -412,8 +416,12 @@ export async function buildRunObservation(runDir: string): Promise<RunObservatio
       auth_store: state.codexAuthStore ?? "auto",
       network_access: state.workspaceWriteNetworkAccess ?? "inherit",
       writable_roots: state.workspaceWriteWritableRoots ?? [],
+      ui_session: state.workspaceWriteUiSession ?? null,
+      ui_sessions: state.workspaceWriteUiSessions ?? [],
       verification_network_access: state.verificationNetworkAccess ?? null,
       verification_writable_roots: state.verificationWritableRoots ?? [],
+      verification_ui_session: state.verificationUiSession ?? null,
+      verification_ui_sessions: state.verificationUiSessions ?? [],
     },
     detached_execution: {
       jobs: new Set(events.flatMap((event) => event.metrics.headless_job_id ? [event.metrics.headless_job_id] : [])).size,
@@ -545,8 +553,10 @@ export interface ObservationReport {
     codex_auth_store: Record<string, number>;
     workspace_write_network_access: Record<string, number>;
     workspace_write_writable_root: Record<string, number>;
+    implementation_ui_session_handoff: Record<string, number>;
     verification_network_access: Record<string, number>;
     verification_writable_root: Record<string, number>;
+    verification_ui_session_handoff: Record<string, number>;
     execution_backend: Record<string, number>;
     delegation_pattern: Record<string, number>;
     experiment_variant: Record<string, number>;
@@ -688,7 +698,8 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
     failure_phase: {},
     implementation_model: {}, research_model: {}, verification_model: {}, verification_status: {},
     codex_home_mode: {}, codex_auth_store: {}, workspace_write_network_access: {},
-    workspace_write_writable_root: {}, verification_network_access: {}, verification_writable_root: {},
+    workspace_write_writable_root: {}, implementation_ui_session_handoff: {},
+    verification_network_access: {}, verification_writable_root: {}, verification_ui_session_handoff: {},
     execution_backend: {},
     delegation_pattern: {}, experiment_variant: {},
     autonomous_stop_reason: {}, delegator_revision: {},
@@ -711,6 +722,13 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
     } else {
       increment(breakdowns.workspace_write_writable_root, "none-explicit");
     }
+    if (run.codex_environment.ui_sessions.length) {
+      for (const session of run.codex_environment.ui_sessions) {
+        increment(breakdowns.implementation_ui_session_handoff, session);
+      }
+    } else {
+      increment(breakdowns.implementation_ui_session_handoff, "none-declared");
+    }
     if (run.attempts.verify !== undefined) {
       increment(breakdowns.verification_network_access, run.codex_environment.verification_network_access);
       if (run.codex_environment.verification_writable_roots.length) {
@@ -719,6 +737,13 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
         }
       } else {
         increment(breakdowns.verification_writable_root, "none-explicit");
+      }
+      if (run.codex_environment.verification_ui_sessions.length) {
+        for (const session of run.codex_environment.verification_ui_sessions) {
+          increment(breakdowns.verification_ui_session_handoff, session);
+        }
+      } else {
+        increment(breakdowns.verification_ui_session_handoff, "none-declared");
       }
     }
     for (const backend of run.detached_execution.backends) increment(breakdowns.execution_backend, backend);
@@ -898,6 +923,10 @@ ${breakdownRows(report.breakdowns.workspace_write_network_access)}
 | --- | ---: |
 ${breakdownRows(report.breakdowns.workspace_write_writable_root)}
 
+| Implementation UI session handoff | Runs |
+| --- | ---: |
+${breakdownRows(report.breakdowns.implementation_ui_session_handoff)}
+
 | Verification network | Runs |
 | --- | ---: |
 ${breakdownRows(report.breakdowns.verification_network_access)}
@@ -905,6 +934,10 @@ ${breakdownRows(report.breakdowns.verification_network_access)}
 | Verification extra writable root | Runs |
 | --- | ---: |
 ${breakdownRows(report.breakdowns.verification_writable_root)}
+
+| Verification UI session handoff | Runs |
+| --- | ---: |
+${breakdownRows(report.breakdowns.verification_ui_session_handoff)}
 
 ## Pattern comparison
 
@@ -940,7 +973,7 @@ ${breakdownRows(report.breakdowns.failure_phase)}
 
 | Run | Pattern | Variant | Type | Complexity | Status | Verify | Detached | Codex state | Brief edits | Gate rejections | Outcome |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-${report.runs.map((run) => `| ${markdownCell(run.run_id)} | ${markdownCell(run.delegation_pattern)} | ${markdownCell(run.experiment_variant ?? "-")} | ${markdownCell(run.metadata.task_type)} | ${markdownCell(run.metadata.complexity)} | ${markdownCell(run.salvaged_after_failure ? `${run.status} (salvaged)` : run.implementation_completed_before_iteration_failure ? `${run.status} (implementation completed; iterate failed)` : run.status)} | ${markdownCell(run.verification_status ?? "-")} | ${markdownCell(run.detached_execution.backends.join(",") || "-")} | ${markdownCell(`${run.codex_environment.mode}/${run.codex_environment.auth_store}/impl:${run.codex_environment.network_access}+${run.codex_environment.writable_roots.length}roots/verify:${run.codex_environment.verification_network_access ?? "-"}+${run.codex_environment.verification_writable_roots.length}roots`)} | ${run.brief_json_difference_count ?? "n/a"} | ${run.controller_cost.gate_rejections} | ${markdownCell(run.evaluation?.outcome ?? "not-evaluated")} |`).join("\n")}
+${report.runs.map((run) => `| ${markdownCell(run.run_id)} | ${markdownCell(run.delegation_pattern)} | ${markdownCell(run.experiment_variant ?? "-")} | ${markdownCell(run.metadata.task_type)} | ${markdownCell(run.metadata.complexity)} | ${markdownCell(run.salvaged_after_failure ? `${run.status} (salvaged)` : run.implementation_completed_before_iteration_failure ? `${run.status} (implementation completed; iterate failed)` : run.status)} | ${markdownCell(run.verification_status ?? "-")} | ${markdownCell(run.detached_execution.backends.join(",") || "-")} | ${markdownCell(`${run.codex_environment.mode}/${run.codex_environment.auth_store}/impl:${run.codex_environment.network_access}+${run.codex_environment.writable_roots.length}roots+${run.codex_environment.ui_sessions.length}ui/verify:${run.codex_environment.verification_network_access ?? "-"}+${run.codex_environment.verification_writable_roots.length}roots+${run.codex_environment.verification_ui_sessions.length}ui`)} | ${run.brief_json_difference_count ?? "n/a"} | ${run.controller_cost.gate_rejections} | ${markdownCell(run.evaluation?.outcome ?? "not-evaluated")} |`).join("\n")}
 
 ${directoriesSection(report)}${report.invalid_runs.length ? `## Invalid runs\n\n${report.invalid_runs.map((item) => `- ${item.run_dir}: ${item.error}`).join("\n")}\n` : ""}`;
 }

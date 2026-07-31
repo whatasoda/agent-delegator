@@ -44,8 +44,12 @@ export interface RunHistoryEntry {
     auth_store: string;
     network_access?: string;
     writable_roots?: string[];
+    ui_session?: string | null;
+    ui_sessions?: string[];
     verification_network_access?: string | null;
     verification_writable_roots?: string[];
+    verification_ui_session?: string | null;
+    verification_ui_sessions?: string[];
   };
   evaluation?: {
     recorded_at: string;

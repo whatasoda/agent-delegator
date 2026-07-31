@@ -228,6 +228,11 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
   network/rootの実効認識をpromptへ明示し、Chrome起動失敗時はsudo/no-sandbox/daemon再起動をせず、
   ownerが起動した明示sessionへの接続へ分業する。danger-full-access選択とprofileからの自動権限付与は
   既存trust boundaryを壊すため不採用。（2026-07-31 done）
+- [x] P5-25: UI verification follow-up — `--ui-session`でowner起動済みbrowser sessionを実装・resume・
+  loop・独立verifyへ明示的に渡し、session切替を消さずstate/history/reportへ記録。handoffなしでは既存sessionを
+  探索させず、terminal非依存sessionを `loop --detach` の前に起動する無人運転を手順化。
+  project profileからのdanger-full-accessはrepository contentによるhost境界解除になるため引き続き不採用。
+  （2026-07-31 done）
 
 ### Trial — 実業務リポジトリ検証
 

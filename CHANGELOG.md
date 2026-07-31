@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## [0.1.0-alpha.7] - 2026-07-31
+
+### Added
+
+- Added explicit owner-started UI session handoffs for implementation, resume, autonomous loops,
+  and independent verification, including current and historical session observability.
+
+### Changed
+
+- Made UI verification prompts distinguish a declared-but-unproven session handoff from browser
+  discovery or launch permission, enabling terminal-independent handoff before detached loops.
+- Documented why trusted project configuration cannot remove the delegator's workspace-write
+  boundary for non-interactive runs.
+
 ## [0.1.0-alpha.6] - 2026-07-31
 
 ### Added

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.4 - 2026-07-31
+
+- Updated the exact core CLI compatibility preflight to `0.1.0-alpha.7`.
+- Added the owner-started UI session handoff and detached-loop operating procedure.
+
 ## 0.2.3 - 2026-07-31
 
 - Updated the exact core CLI compatibility preflight to `0.1.0-alpha.6`.

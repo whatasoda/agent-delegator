@@ -295,6 +295,13 @@ sessionで別の固定policyとしてstate/history/reportへ残す。repository�
 `danger-full-access` は既存のworkspace-write境界と衝突するため委譲optionにしない。UI検証ではbrowser
 processの起動をowner prerequisite、既存の明示sessionへの接続・操作・判定をCodexの担当として分ける。
 起動失敗をproxy停止と推測したり、sudo/no-sandbox/daemon再起動へ誘導しないことをprompt contractにする。
+trusted projectのCodex configが別sandboxを宣言してもdelegatorの明示modeを優先し、repository contentだけで
+非対話runのhost境界を外さない。
+
+owner prerequisiteを無人loopでも使えるよう、UI session名は `--ui-session` で明示する。現在のhandoffと
+過去に宣言した全sessionを実装・独立verify別に保持し、prompt/state/history/reportへ投影する。名前の宣言は
+liveness証明ではなく、接続失敗時に別sessionを探索する権限も与えない。ownerがterminal非依存sessionを
+起動してから `loop --detach` へ渡すことで、browser processだけをsandbox外に残して親の常駐を不要にする。
 
 失敗checkpointは部分成果の観測であって承認ではない。trusted retry baselineとobserved worktreeを
 別フィールドにし、失敗後もbaselineは進めず、observed fingerprint / file count / patch bytesと診断

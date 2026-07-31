@@ -98,6 +98,18 @@
       "items": { "type": "string", "minLength": 1 },
       "uniqueItems": true
     },
+    "workspaceWriteUiSession": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$"
+    },
+    "workspaceWriteUiSessions": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$" },
+      "uniqueItems": true
+    },
     "verificationModel": { "type": ["string", "null"] },
     "verificationSessionId": { "type": ["string", "null"] },
     "verificationCount": { "type": "integer", "minimum": 0 },
@@ -109,6 +121,18 @@
       "type": "array",
       "maxItems": 16,
       "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "verificationUiSession": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$"
+    },
+    "verificationUiSessions": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$" },
       "uniqueItems": true
     }
   }
