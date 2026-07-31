@@ -71,7 +71,19 @@ async function fixture(): Promise<{
       JSON.stringify({ type: "user", message: { content: "Add a greeting, but ask which wording to use." } }),
       JSON.stringify({
         type: "assistant",
-        message: { content: "Agreed. Implementation must wait for the exact greeting wording." },
+        uuid: "fixture-assistant-fragment",
+        timestamp: "2026-07-31T00:00:00.000Z",
+        message: {
+          id: "fixture-assistant-message",
+          model: "claude-fixture",
+          content: "Agreed. Implementation must wait for the exact greeting wording.",
+          usage: {
+            input_tokens: 2,
+            cache_creation_input_tokens: 10,
+            cache_read_input_tokens: 20,
+            output_tokens: 3,
+          },
+        },
       }),
     ].join("\n"),
   );
@@ -484,6 +496,8 @@ describe("agent-delegator CLI", () => {
     expect(observed.metadata).toEqual({ task_type: "tooling", complexity: "small", tags: ["observability", "fixture"] });
     expect(observed.usage).toEqual({ input_tokens: 500, cached_input_tokens: 125, output_tokens: 160 });
     expect(observed.usage_observed_calls).toBe(3);
+    expect(observed.claude_usage).toMatchObject({ status: "observed", messages: 1, fresh_tokens: 15 });
+    expect(observed.delegation_leverage.codex_fresh_share_percent).toBe(97.27);
     expect(observed.models).toEqual({
       compiler: "codex-default",
       implementation: "codex-default",
@@ -503,6 +517,9 @@ describe("agent-delegator CLI", () => {
       codex_calls: 3,
       usage_observed_calls: 3,
       token_observation_percent: 100,
+      claude_usage_observed_runs: 1,
+      claude_fresh_tokens: 15,
+      codex_fresh_share_percent: 97.27,
     });
     expect(reportValue.breakdowns.task_type).toEqual({ tooling: 1 });
     expect(reportValue.breakdowns.compiler_model).toEqual({ "codex-default": 1 });

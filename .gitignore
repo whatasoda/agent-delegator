@@ -3,3 +3,4 @@ dist/
 .agent-delegator/
 *.tgz
 .DS_Store
+CLAUDE_*_FIELD_REPORT.md

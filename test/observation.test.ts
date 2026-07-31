@@ -132,6 +132,55 @@ describe("run observation", () => {
     expect(renderObservationReport(report)).toContain("Controller interactions tracked: 0 (gate rejections: 0, failed Codex calls: 0)");
   });
 
+  test("reports deduplicated Claude-to-Codex leverage against implementation size", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-delegator-leverage-"));
+    temporaryDirectories.push(root);
+    const runsDir = join(root, "runs");
+    const runDir = join(runsDir, "measured");
+    await mkdir(runDir, { recursive: true });
+    await writeRunState(runDir, legacyState("measured", root));
+    await appendRunEvent(runDir, {
+      stage: "implement", event: "completed", attempt: 1, duration_ms: 10, model: "codex-fixture",
+      run_status: "completed", failure_category: null, message: null,
+      usage: { input_tokens: 1_000, cached_input_tokens: 800, output_tokens: 100 },
+      metrics: { codex_invoked: true, changed_file_count: 4, patch_bytes: 8 * 1024 }, artifacts: [],
+    });
+    await writeFile(join(runDir, "claude-usage.json"), `${JSON.stringify({
+      schema_version: "1",
+      updated_at: "2026-07-31T00:00:00.000Z",
+      method: "transcript-message-usage",
+      cursors: [],
+      captures: [{
+        captured_at: "2026-07-31T00:00:00.000Z", command: "evaluate", phase: "review",
+        scope: "since-prior-boundary", status: "captured", added_messages: 1, detail: null,
+      }],
+      messages: [{
+        id: "a".repeat(64), transcript_id: "b".repeat(64), source_line: 1,
+        timestamp: null, model: "claude-fixture", phase: "review",
+        usage: { input_tokens: 20, cache_creation_input_tokens: 30, cache_read_input_tokens: 100, output_tokens: 50 },
+      }],
+    })}\n`);
+
+    const report = await buildObservationReport(runsDir);
+    expect(report.summary).toMatchObject({
+      codex_fresh_tokens: 300,
+      comparable_codex_fresh_tokens: 300,
+      claude_fresh_tokens: 100,
+      codex_fresh_share_percent: 75,
+      codex_processed_share_percent: 84.62,
+      codex_output_share_percent: 66.67,
+    });
+    expect(report.averages).toMatchObject({
+      claude_fresh_tokens_per_patch_kib: 12.5,
+      claude_fresh_tokens_per_changed_file: 25,
+    });
+    expect(report.breakdowns.implementation_size).toEqual({ small: 1 });
+    expect(report.comparisons.implementation_size.small).toMatchObject({
+      codex_fresh_tokens: 300, claude_fresh_tokens: 100, codex_fresh_share_percent: 75,
+    });
+    expect(renderObservationReport(report)).toContain("Comparable Codex / Claude fresh tokens: 300 / 100; Codex fresh share: 75%");
+  });
+
   test("aggregates multiple runs directories and flags unavailable ones", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-delegator-all-"));
     temporaryDirectories.push(root);
