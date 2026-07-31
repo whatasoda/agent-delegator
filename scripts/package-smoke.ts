@@ -1,6 +1,7 @@
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
+import packageJson from "../package.json";
 
 interface CommandResult {
   stdout: string;
@@ -180,11 +181,25 @@ process.stdout.write(JSON.stringify({
 
   const installedCli = join(consumer, "node_modules", ".bin", "agent-delegator");
   const claudeConfig = join(temporaryRoot, "claude-config");
+  const distributionEnv = {
+    ...process.env,
+    AGENT_DELEGATOR_CLAUDE_CONFIG_REGISTRY_PATH: join(temporaryRoot, "claude-configs.json"),
+  };
   const setup = await run(
     [installedCli, "setup", "--claude-config-dir", claudeConfig, "--json"],
     consumer,
+    distributionEnv,
   );
   assert(JSON.parse(setup.stdout).status === "created", "Installed CLI did not materialize its embedded skill");
+  const registeredConfigs = JSON.parse(
+    await readFile(distributionEnv.AGENT_DELEGATOR_CLAUDE_CONFIG_REGISTRY_PATH, "utf8"),
+  ).configs;
+  assert(
+    registeredConfigs.length === 1 &&
+      registeredConfigs[0]?.claudeConfigDir === claudeConfig &&
+      registeredConfigs[0]?.skillVersion === packageJson.version,
+    "Installed CLI did not register its synchronized Claude config",
+  );
   const installedSkill = await readFile(
     join(claudeConfig, "skills", "agent-delegator", "SKILL.md"),
     "utf8",

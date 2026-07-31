@@ -245,6 +245,10 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
   branch・Git identity・成功checkpointを確認したcontrollerだけがlinear childを作る。失敗、判断待ち、
   blocked、convergedではcommitせず、intent/result、state、event、history、reportへSHAと選択を記録。
   push/tag/PR/merge/rebase/amend/release/deployは引き続きowner責務。（2026-07-31 done）
+- [x] P5-28: 複数Claude config配布 — 成功したsetup/syncごとにconfig pathとskill versionをmachine-level
+  registryへ登録し、一覧・解除・`sync --all`・`update --all`を追加。共有global CLIが実際に更新された場合は
+  起動元に関係なく登録済み全configを新CLIから同期し、config-localなupdate policy/cacheとskill配布先を
+  分離。（2026-08-01 done）
 
 ### Trial — 実業務リポジトリ検証
 

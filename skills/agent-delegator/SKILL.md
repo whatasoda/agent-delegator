@@ -29,7 +29,9 @@ description: >-
 
 `agent-delegator doctor --json` を実行する。CLI が無ければ
 `bun add --global @whatasoda/agent-delegator@alpha && agent-delegator setup`（Bun >= 1.3.0 必須）で
-導入する。更新通知が表示されたら `agent-delegator update` を使い、CLI と skill を同時に更新する。
+導入する。複数のClaude configを使う場合は各configで一度`setup`し、`agent-delegator claude-configs`で
+登録を確認する。更新通知が表示されたら `agent-delegator update --all` を使い、グローバルCLIと登録済み
+全configのskillを同時に更新する。
 `doctor` が失敗した状態で委譲を開始しない。
 `doctor` の `codex_authentication.authenticated` も確認し、falseなら選択したhome/storeでloginを整える。
 

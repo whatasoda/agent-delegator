@@ -62,21 +62,36 @@ agent-delegator setup
 agent-delegator sync
 ```
 
-`sync` is idempotent and only refreshes managed skill files from the running CLI. The skill asks the
+Each successful `setup` or `sync` registers the resolved config directory in
+`~/.agent-delegator/claude-configs.json`. Register every Claude profile once, then inspect or refresh
+them together:
+
+```sh
+agent-delegator setup --claude-config-dir=/path/to/first-config
+agent-delegator setup --claude-config-dir=/path/to/second-config
+agent-delegator claude-configs
+agent-delegator sync --all --claude-config-dir=/path/to/current-config
+```
+
+`claude-configs --remove <dir>` forgets a retired profile without deleting its files. `sync` is
+idempotent and only refreshes managed skill files from the running CLI. The skill asks the
 CLI for cached update status whenever Claude loads it. That request immediately returns the previous
 result and starts the next registry check in a detached process, so network latency never blocks
 skill loading. A newer cached version is reported on the next invocation.
 
 Use the integrated updater to update the global package and then run `sync` through the newly
-installed executable:
+installed executable. Because the executable is shared globally, an actual package upgrade always
+synchronizes every registered config. `--all` also repairs every registered skill when the package
+is already current:
 
 ```sh
-agent-delegator update
+agent-delegator update --all
 ```
 
 Automatic updates are opt-in. The updater records an attempt before starting it, so a registry
 version is automatically processed at most once even when that attempt fails. A later manual
-`agent-delegator update` remains available for recovery.
+`agent-delegator update --all` remains available for recovery. The preference and check cache stay
+config-local, while a successful global package upgrade refreshes all registered skill copies.
 
 ```sh
 agent-delegator setup --auto-update

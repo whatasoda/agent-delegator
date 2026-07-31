@@ -38,9 +38,15 @@ appendFileSync(process.env.FAKE_SYNC_LOG, process.argv.slice(2).join(" ") + "\\n
 }
 
 async function run(args: string[], environment: Record<string, string | undefined> = process.env) {
+  const configOption = args.indexOf("--claude-config-dir");
+  const claudeConfigDir = configOption >= 0
+    ? args[configOption + 1]
+    : environment.CLAUDE_CONFIG_DIR;
+  const registryPath = environment.AGENT_DELEGATOR_CLAUDE_CONFIG_REGISTRY_PATH ??
+    join(claudeConfigDir ?? tmpdir(), "agent-delegator-test-claude-configs.json");
   const child = Bun.spawn([process.execPath, cli, ...args], {
     cwd: resolve(import.meta.dir, ".."),
-    env: environment,
+    env: { ...environment, AGENT_DELEGATOR_CLAUDE_CONFIG_REGISTRY_PATH: registryPath },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -82,6 +88,35 @@ describe("setup and sync commands", () => {
 
     expect(second.exitCode).toBe(0);
     expect(JSON.parse(second.stdout)).toMatchObject({ status: "unchanged", claude_config_dir: config });
+  });
+
+  test("registers and synchronizes multiple Claude config directories", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-delegator-cli-multiple-configs-"));
+    temporaryDirectories.push(root);
+    const first = join(root, "first");
+    const second = join(root, "second");
+    const registryPath = join(root, "claude-configs.json");
+    const environment = {
+      ...process.env,
+      AGENT_DELEGATOR_CLAUDE_CONFIG_REGISTRY_PATH: registryPath,
+    };
+
+    expect((await run(["setup", "--claude-config-dir", first, "--json"], environment)).exitCode).toBe(0);
+    expect((await run(["setup", "--claude-config-dir", second, "--json"], environment)).exitCode).toBe(0);
+    const all = await run(["sync", "--all", "--claude-config-dir", first, "--json"], environment);
+
+    expect(all.exitCode).toBe(0);
+    expect(JSON.parse(all.stdout).results.map((result: { claude_config_dir: string }) => result.claude_config_dir))
+      .toEqual([first, second]);
+    const listed = JSON.parse((await run(["claude-configs", "--json"], environment)).stdout);
+    expect(listed.configs.map((config: { claude_config_dir: string }) => config.claude_config_dir))
+      .toEqual([first, second]);
+    expect(listed.configs.every((config: { skill_version: string }) => config.skill_version === packageJson.version))
+      .toBe(true);
+
+    const removed = JSON.parse((await run(["claude-configs", "--remove", second, "--json"], environment)).stdout);
+    expect(removed.removed).toEqual({ claude_config_dir: second, found: true });
+    expect(removed.configs.map((config: { claude_config_dir: string }) => config.claude_config_dir)).toEqual([first]);
   });
 
   test("returns cached status immediately and refreshes it in a detached process", async () => {
@@ -183,7 +218,7 @@ describe("setup and sync commands", () => {
       expect(result.exitCode).toBe(0);
       expect((await readFile(bunLog, "utf8")).trim())
         .toBe("add --global @whatasoda/agent-delegator@0.1.0-alpha.999");
-      expect((await readFile(syncLog, "utf8")).trim()).toBe(`sync --claude-config-dir ${config} --json`);
+      expect((await readFile(syncLog, "utf8")).trim()).toBe(`sync --all --claude-config-dir ${config} --json`);
     } finally {
       server.stop(true);
     }
@@ -230,7 +265,7 @@ describe("setup and sync commands", () => {
         "add --global @whatasoda/agent-delegator@0.1.0-alpha.999",
       ]);
       expect((await readFile(syncLog, "utf8")).trim().split("\n")).toEqual([
-        `sync --claude-config-dir ${config} --json`,
+        `sync --all --claude-config-dir ${config} --json`,
       ]);
       const state = JSON.parse(await readFile(join(config, "agent-delegator", "update-state.json"), "utf8"));
       expect(state.attempts["0.1.0-alpha.999"]).toMatchObject({ status: "succeeded", error: null });

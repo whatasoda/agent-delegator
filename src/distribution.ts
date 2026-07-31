@@ -1,6 +1,6 @@
 import { open, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 export const managedSkillMarker = "<!-- managed-by: @whatasoda/agent-delegator -->";
 
@@ -8,6 +8,18 @@ export interface SkillSyncResult {
   claudeConfigDir: string;
   path: string;
   status: "created" | "updated" | "unchanged";
+}
+
+export interface ClaudeConfigRegistration {
+  claudeConfigDir: string;
+  skillVersion: string;
+  registeredAt: string;
+  syncedAt: string;
+}
+
+interface ClaudeConfigRegistry {
+  schemaVersion: 1;
+  configs: ClaudeConfigRegistration[];
 }
 
 export interface UpdateCheck {
@@ -53,6 +65,17 @@ export function updateStatePath(claudeConfigDir: string): string {
   return join(resolve(claudeConfigDir), "agent-delegator", "update-state.json");
 }
 
+export function claudeConfigRegistryPath(
+  environment: Record<string, string | undefined> = process.env,
+): string {
+  const override = environment.AGENT_DELEGATOR_CLAUDE_CONFIG_REGISTRY_PATH?.trim();
+  if (override) return resolve(override);
+  const runRegistry = environment.AGENT_DELEGATOR_REGISTRY_PATH?.trim();
+  return runRegistry
+    ? join(dirname(resolve(runRegistry)), "claude-configs.json")
+    : join(homedir(), ".agent-delegator", "claude-configs.json");
+}
+
 function defaultUpdateState(): UpdateState {
   return { schemaVersion: 1, autoUpdate: false, lastCheck: null, attempts: {} };
 }
@@ -93,6 +116,116 @@ async function writeAtomic(path: string, content: string, mode: number): Promise
   } finally {
     await rm(temporary, { force: true });
   }
+}
+
+async function withRegistryLock<T>(path: string, action: () => Promise<T>): Promise<T> {
+  const lockPath = `${path}.lock`;
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const token = crypto.randomUUID();
+  let acquired = false;
+  for (let attempt = 0; attempt < 500; attempt += 1) {
+    try {
+      const handle = await open(lockPath, "wx", 0o600);
+      try {
+        await handle.writeFile(`${token}\n${process.pid}\n${new Date().toISOString()}\n`);
+      } catch (error) {
+        await handle.close();
+        await rm(lockPath, { force: true });
+        throw error;
+      }
+      await handle.close();
+      acquired = true;
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const metadata = await stat(lockPath).catch(() => null);
+      if (metadata && Date.now() - metadata.mtimeMs > 5 * 60 * 1000) {
+        await rm(lockPath, { force: true });
+        continue;
+      }
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+    }
+  }
+  if (!acquired) throw new Error(`Timed out waiting for Claude config registry lock at ${lockPath}`);
+  try {
+    return await action();
+  } finally {
+    const current = await readFile(lockPath, "utf8").catch(() => "");
+    if (current.startsWith(`${token}\n`)) await rm(lockPath, { force: true });
+  }
+}
+
+function isClaudeConfigRegistration(value: unknown): value is ClaudeConfigRegistration {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const registration = value as Partial<ClaudeConfigRegistration>;
+  return typeof registration.claudeConfigDir === "string" && isAbsolute(registration.claudeConfigDir) &&
+    typeof registration.skillVersion === "string" && registration.skillVersion.length > 0 &&
+    typeof registration.registeredAt === "string" && typeof registration.syncedAt === "string";
+}
+
+export async function readRegisteredClaudeConfigs(
+  path = claudeConfigRegistryPath(),
+): Promise<ClaudeConfigRegistration[]> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(path, "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`Invalid Claude config registry at ${path}`);
+  }
+  const registry = parsed as Partial<ClaudeConfigRegistry>;
+  if (registry.schemaVersion !== 1 || !Array.isArray(registry.configs) ||
+    !registry.configs.every(isClaudeConfigRegistration)) {
+    throw new Error(`Invalid Claude config registry at ${path}`);
+  }
+  const unique = new Map<string, ClaudeConfigRegistration>();
+  for (const registration of registry.configs) {
+    unique.set(resolve(registration.claudeConfigDir), registration);
+  }
+  return [...unique.values()].sort((left, right) => left.claudeConfigDir.localeCompare(right.claudeConfigDir));
+}
+
+export async function registerClaudeConfig(options: {
+  claudeConfigDir: string;
+  skillVersion: string;
+  path?: string;
+  now?: () => Date;
+}): Promise<ClaudeConfigRegistration> {
+  const path = options.path ?? claudeConfigRegistryPath();
+  return withRegistryLock(path, async () => {
+    const claudeConfigDir = resolve(options.claudeConfigDir);
+    const registrations = await readRegisteredClaudeConfigs(path);
+    const existing = registrations.find((entry) => entry.claudeConfigDir === claudeConfigDir);
+    const syncedAt = (options.now ?? (() => new Date()))().toISOString();
+    const registration: ClaudeConfigRegistration = {
+      claudeConfigDir,
+      skillVersion: options.skillVersion,
+      registeredAt: existing?.registeredAt ?? syncedAt,
+      syncedAt,
+    };
+    const next = registrations.filter((entry) => entry.claudeConfigDir !== claudeConfigDir);
+    next.push(registration);
+    next.sort((left, right) => left.claudeConfigDir.localeCompare(right.claudeConfigDir));
+    await writeAtomic(path, `${JSON.stringify({ schemaVersion: 1, configs: next }, null, 2)}\n`, 0o600);
+    return registration;
+  });
+}
+
+export async function unregisterClaudeConfig(
+  claudeConfigDir: string,
+  path = claudeConfigRegistryPath(),
+): Promise<boolean> {
+  return withRegistryLock(path, async () => {
+    const resolved = resolve(claudeConfigDir);
+    const registrations = await readRegisteredClaudeConfigs(path);
+    const next = registrations.filter((entry) => entry.claudeConfigDir !== resolved);
+    if (next.length === registrations.length) return false;
+    await writeAtomic(path, `${JSON.stringify({ schemaVersion: 1, configs: next }, null, 2)}\n`, 0o600);
+    return true;
+  });
 }
 
 export async function syncClaudeSkill(options: {

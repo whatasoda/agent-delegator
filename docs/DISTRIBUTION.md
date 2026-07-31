@@ -53,13 +53,22 @@ skill with the same name.
 ```sh
 agent-delegator sync
 agent-delegator sync --claude-config-dir=/managed/claude/config
+agent-delegator sync --all --claude-config-dir=/managed/claude/config
 ```
+
+Every successful single-config `setup` or `sync` records the resolved directory and synchronized
+skill version in `~/.agent-delegator/claude-configs.json` (override with
+`AGENT_DELEGATOR_CLAUDE_CONFIG_REGISTRY_PATH`). `claude-configs` lists the registered targets and
+`claude-configs --remove <dir>` forgets a retired target without deleting it. `--all` includes the
+current resolved config and every registered config while preserving the unmanaged-file guard.
 
 ## Update model
 
 `agent-delegator update` resolves the package's configured npm dist-tag, installs an available newer
-version with Bun, locates Bun's global bin directory, and invokes the newly installed CLI's `sync`
-command. When the installed version is already current, it still synchronizes the embedded skill.
+version with Bun, locates Bun's global bin directory, and invokes the newly installed CLI's
+`sync --all` command. A global package upgrade therefore refreshes every registered config even when
+only one profile initiated it. When the installed version is already current, `update` synchronizes
+the current config and `update --all` synchronizes every registered config.
 
 The managed skill runs `agent-delegator update-check` through Claude's dynamic context injection.
 The foreground process reads the previous cache and returns immediately, then starts
@@ -76,8 +85,9 @@ agent-delegator setup --no-auto-update
 
 Refreshes use a config-local lock. Before an automatic update begins, the target version is recorded
 in the persistent attempt map. Success and failure are both terminal for automatic processing of
-that version, which prevents concurrent skill loads or repeated checks from retrying the same
-version. Manual `agent-delegator update` is always the recovery path.
+that version in that config, which prevents concurrent skill loads or repeated checks from retrying
+the same version. The package installation is global, and its successful update synchronizes all
+registered configs. Manual `agent-delegator update --all` is always the recovery path.
 
 ## Programmatic library
 
