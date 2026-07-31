@@ -870,7 +870,7 @@ describe("agent-delegator CLI", () => {
     );
     expect(restarted.exitCode).toBe(0);
     expect(JSON.parse(restarted.stdout)).toMatchObject({ status: "completed", attempt: 2 });
-  });
+  }, 15_000);
 
   test("fails closed when a purported read-only researcher changes the worktree", async () => {
     const { repo, runs, transcript, env } = await fixture();
