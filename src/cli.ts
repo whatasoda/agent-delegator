@@ -94,7 +94,7 @@ import {
 } from "./run-store.js";
 import { resolveClaudeTranscript } from "./session.js";
 import { normalizeTranscriptFile } from "./transcript.js";
-import embeddedOperatorSkill from "../skills/agent-delegator/SKILL.md";
+import embeddedOperatorSkill from "../skills/agent-delegator/SKILL.md" with { type: "text" };
 import {
   cachedUpdateNotice,
   compareSemver,

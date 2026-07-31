@@ -185,9 +185,14 @@ process.stdout.write(JSON.stringify({
     consumer,
   );
   assert(JSON.parse(setup.stdout).status === "created", "Installed CLI did not materialize its embedded skill");
+  const installedSkill = await readFile(
+    join(claudeConfig, "skills", "agent-delegator", "SKILL.md"),
+    "utf8",
+  );
   assert(
-    (await readFile(join(claudeConfig, "skills", "agent-delegator", "SKILL.md"), "utf8"))
-      .includes("managed-by: @whatasoda/agent-delegator"),
+    installedSkill.startsWith("---\nname: agent-delegator\n") &&
+      installedSkill.includes("managed-by: @whatasoda/agent-delegator") &&
+      !installedSkill.includes("<h1>"),
     "Installed CLI materialized an unmanaged or incomplete skill",
   );
   // Invoke the launcher through an absolute interpreter path so only `bun` lookup depends on the

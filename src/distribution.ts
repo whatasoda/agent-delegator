@@ -100,6 +100,9 @@ export async function syncClaudeSkill(options: {
   content: string;
   force?: boolean;
 }): Promise<SkillSyncResult> {
+  if (!options.content.startsWith("---\n") || !options.content.includes("\n---\n")) {
+    throw new Error("Embedded skill is missing its Markdown frontmatter");
+  }
   if (!options.content.includes(managedSkillMarker)) {
     throw new Error("Embedded skill is missing its managed-file marker");
   }

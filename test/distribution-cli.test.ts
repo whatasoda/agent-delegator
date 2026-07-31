@@ -68,8 +68,10 @@ describe("setup and sync commands", () => {
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({ status: "created", auto_update: true });
     const skill = await readFile(join(config, "skills", "agent-delegator", "SKILL.md"), "utf8");
+    expect(skill).toStartWith("---\nname: agent-delegator\n");
     expect(skill).toContain(managedSkillMarker);
     expect(skill).toContain("agent-delegator update-check");
+    expect(skill).not.toContain("<h1>");
   });
 
   test("sync is idempotent and honors an explicit config directory", async () => {
