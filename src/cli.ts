@@ -97,13 +97,17 @@ import { normalizeTranscriptFile } from "./transcript.js";
 import embeddedOperatorSkill from "../skills/agent-delegator/SKILL.md" with { type: "text" };
 import {
   cachedUpdateNotice,
+  claudeConfigRegistryPath,
   compareSemver,
   fetchLatestPackageVersion,
+  readRegisteredClaudeConfigs,
   readUpdateState,
   refreshUpdateState,
+  registerClaudeConfig,
   resolveClaudeConfigDir,
   setAutoUpdate,
   syncClaudeSkill,
+  unregisterClaudeConfig,
   writeUpdateState,
 } from "./distribution.js";
 
@@ -239,8 +243,9 @@ const argumentSpecs: Record<string, ArgumentSpec> = {
     values: ["--claude-config-dir"],
     flags: ["--auto-update", "--no-auto-update", "--force", "--json"],
   },
-  sync: { values: ["--claude-config-dir"], flags: ["--force", "--json"] },
-  update: { values: ["--claude-config-dir"], flags: ["--force", "--json"] },
+  sync: { values: ["--claude-config-dir"], flags: ["--all", "--force", "--json"] },
+  update: { values: ["--claude-config-dir"], flags: ["--all", "--force", "--json"] },
+  "claude-configs": { values: ["--remove"], flags: ["--json"] },
   "update-check": {
     values: ["--claude-config-dir"],
     flags: ["--refresh", "--json"],
@@ -3641,22 +3646,55 @@ async function runDistributionCommand(command: string, args: string[]): Promise<
   return stdout;
 }
 
-async function syncEmbeddedSkill(args: string[]): Promise<Awaited<ReturnType<typeof syncClaudeSkill>>> {
-  return syncClaudeSkill({
-    claudeConfigDir: claudeConfigDirFromArgs(args),
+async function syncClaudeConfigDir(
+  claudeConfigDir: string,
+  force: boolean,
+): Promise<Awaited<ReturnType<typeof syncClaudeSkill>>> {
+  const result = await syncClaudeSkill({
+    claudeConfigDir,
     content: embeddedOperatorSkill,
-    force: flag(args, "--force"),
+    force,
   });
+  await registerClaudeConfig({ claudeConfigDir: result.claudeConfigDir, skillVersion: packageJson.version });
+  return result;
+}
+
+async function syncEmbeddedSkill(args: string[]): Promise<Awaited<ReturnType<typeof syncClaudeSkill>>> {
+  return syncClaudeConfigDir(claudeConfigDirFromArgs(args), flag(args, "--force"));
+}
+
+async function syncAllEmbeddedSkills(
+  args: string[],
+): Promise<Array<Awaited<ReturnType<typeof syncClaudeSkill>>>> {
+  const current = await syncEmbeddedSkill(args);
+  const registrations = await readRegisteredClaudeConfigs();
+  const results = [current];
+  for (const registration of registrations) {
+    if (registration.claudeConfigDir === current.claudeConfigDir) continue;
+    results.push(await syncClaudeConfigDir(registration.claudeConfigDir, flag(args, "--force")));
+  }
+  return results;
 }
 
 async function commandSync(args: string[]): Promise<void> {
-  const result = await syncEmbeddedSkill(args);
-  if (flag(args, "--json")) print({
-    claude_config_dir: result.claudeConfigDir,
-    path: result.path,
-    status: result.status,
-  });
-  else process.stdout.write(`${result.status}: ${result.path}\n`);
+  const results = flag(args, "--all") ? await syncAllEmbeddedSkills(args) : [await syncEmbeddedSkill(args)];
+  if (flag(args, "--json")) {
+    if (!flag(args, "--all")) {
+      const result = results[0]!;
+      print({ claude_config_dir: result.claudeConfigDir, path: result.path, status: result.status });
+    } else {
+      print({
+        registry_path: claudeConfigRegistryPath(),
+        results: results.map((result) => ({
+          claude_config_dir: result.claudeConfigDir,
+          path: result.path,
+          status: result.status,
+        })),
+      });
+    }
+  } else {
+    process.stdout.write(results.map((result) => `${result.status}: ${result.path}`).join("\n") + "\n");
+  }
 }
 
 async function commandSetup(args: string[]): Promise<void> {
@@ -3701,7 +3739,7 @@ async function performPackageUpdate(version: string, claudeConfigDir: string, fo
   await runDistributionCommand(bunCommand, ["add", "--global", `${packageJson.name}@${version}`]);
   const globalBin = (await runDistributionCommand(bunCommand, ["pm", "bin", "-g"])).trim();
   if (!globalBin) throw new Error("Bun did not report its global bin directory");
-  const syncArgs = ["sync", "--claude-config-dir", claudeConfigDir, "--json"];
+  const syncArgs = ["sync", "--all", "--claude-config-dir", claudeConfigDir, "--json"];
   if (force) syncArgs.push("--force");
   await runDistributionCommand(join(globalBin, "agent-delegator"), syncArgs);
 }
@@ -3746,8 +3784,10 @@ async function commandUpdate(args: string[]): Promise<void> {
   const latest = await latestPackageVersion();
   const target = compareSemver(latest, packageJson.version) > 0 ? latest : packageJson.version;
   if (target === packageJson.version) {
-    await syncEmbeddedSkill(args);
+    if (flag(args, "--all")) await syncAllEmbeddedSkills(args);
+    else await syncEmbeddedSkill(args);
   } else {
+    await syncEmbeddedSkill(args);
     await performPackageUpdate(target, claudeConfigDir, flag(args, "--force"));
   }
   const state = await readUpdateState(claudeConfigDir);
@@ -3763,9 +3803,43 @@ async function commandUpdate(args: string[]): Promise<void> {
     status: "updated",
     version: target,
     skill_path: join(claudeConfigDir, "skills", "agent-delegator", "SKILL.md"),
+    synced_config_dirs: flag(args, "--all") || target !== packageJson.version
+      ? (await readRegisteredClaudeConfigs()).map((registration) => registration.claudeConfigDir)
+      : [claudeConfigDir],
   };
   if (flag(args, "--json")) print(result);
-  else process.stdout.write(`agent-delegator ${target}\nSynced ${result.skill_path}\n`);
+  else process.stdout.write(
+    `agent-delegator ${target}\n` +
+    result.synced_config_dirs.map((dir) => `Synced ${join(dir, "skills", "agent-delegator", "SKILL.md")}`).join("\n") +
+    "\n",
+  );
+}
+
+async function commandClaudeConfigs(args: string[]): Promise<void> {
+  const remove = option(args, "--remove");
+  const removed = remove ? await unregisterClaudeConfig(remove) : null;
+  const configs = await readRegisteredClaudeConfigs();
+  const result = {
+    registry_path: claudeConfigRegistryPath(),
+    removed: remove ? { claude_config_dir: resolve(remove), found: removed } : null,
+    configs: configs.map((registration) => ({
+      claude_config_dir: registration.claudeConfigDir,
+      skill_version: registration.skillVersion,
+      registered_at: registration.registeredAt,
+      synced_at: registration.syncedAt,
+    })),
+  };
+  if (flag(args, "--json")) print(result);
+  else {
+    const removal = result.removed
+      ? `${result.removed.found ? "Removed" : "Not registered"}: ${result.removed.claude_config_dir}\n`
+      : "";
+    const listing = result.configs.length
+      ? result.configs.map((config) =>
+        `${config.claude_config_dir}\t${config.skill_version}\t${config.synced_at}`).join("\n") + "\n"
+      : `No registered Claude config directories in ${result.registry_path}\n`;
+    process.stdout.write(removal + listing);
+  }
 }
 
 function usage(): string {
@@ -3789,8 +3863,9 @@ function usage(): string {
   agent-delegator history [--pattern implementation|research|interactive|autonomous] [--variant <label>]
   agent-delegator doctor [--cwd <path>] [--json]
   agent-delegator setup [--claude-config-dir <dir>] [--auto-update|--no-auto-update]
-  agent-delegator sync [--claude-config-dir <dir>]
-  agent-delegator update [--claude-config-dir <dir>]
+  agent-delegator sync [--claude-config-dir <dir>] [--all]
+  agent-delegator update [--claude-config-dir <dir>] [--all]
+  agent-delegator claude-configs [--remove <dir>] [--json]
   agent-delegator update-check [--json]
   agent-delegator --version
 
@@ -3801,6 +3876,7 @@ Common options:
   --session-id <id>         Resolve a specific Claude session
   --turns                   Preview stable visible turn numbers for transcript slicing
   --claude-config-dir <dir> Override ~/.claude
+  --all                     Synchronize every registered Claude config directory
   --auto-update             Enable one-attempt-per-version background CLI updates
   --no-auto-update          Disable background CLI updates
   --force                   Replace an unmanaged skill only after reviewing it
@@ -3932,6 +4008,9 @@ async function main(): Promise<void> {
       break;
     case "update-check":
       await commandUpdateCheck(args);
+      break;
+    case "claude-configs":
+      await commandClaudeConfigs(args);
       break;
     case "help":
     case "--help":

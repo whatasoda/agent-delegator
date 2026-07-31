@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## [0.1.0-alpha.13] - 2026-08-01
+
+### Added
+
+- Added a machine-level registry for synchronized Claude config directories, including
+  `claude-configs`, `sync --all`, `update --all`, and safe target removal.
+- Global CLI upgrades now synchronize the managed skill across every registered Claude config,
+  with serialized concurrent registration and per-target synchronized-version records.
+
 ## [0.1.0-alpha.12] - 2026-07-31
 
 ### Fixed
