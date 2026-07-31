@@ -7,10 +7,14 @@ description: >-
   agent-delegator CLI and the Codex CLI.
 ---
 
+<!-- managed-by: @whatasoda/agent-delegator -->
+
 # agent-delegator operator
 
 この skill を使うセッションは設計・承認・統合のオーナーであり、実装または read-only 調査を Codex に委譲する。
 コマンド仕様の正は `agent-delegator --help` とパッケージ同梱の README。
+
+!`agent-delegator update-check 2>/dev/null || true`
 
 ## 適用判断
 
@@ -23,10 +27,10 @@ description: >-
 
 ## 前提チェック
 
-`agent-delegator --version` が `0.1.0-alpha.9` を返すことを確認してから
-`agent-delegator doctor --json` を実行する。CLI が無い、または別バージョンなら
-`bun add --global @whatasoda/agent-delegator@0.1.0-alpha.9`（Bun >= 1.3.0 必須）で、この
-operator が検証済みの CLI に揃える。`doctor` が失敗した状態で委譲を開始しない。
+`agent-delegator doctor --json` を実行する。CLI が無ければ
+`bun add --global @whatasoda/agent-delegator@alpha && agent-delegator setup`（Bun >= 1.3.0 必須）で
+導入する。更新通知が表示されたら `agent-delegator update` を使い、CLI と skill を同時に更新する。
+`doctor` が失敗した状態で委譲を開始しない。
 `doctor` の `codex_authentication.authenticated` も確認し、falseなら選択したhome/storeでloginを整える。
 
 ## パターン選択

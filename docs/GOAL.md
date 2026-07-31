@@ -38,7 +38,7 @@ trust boundary は維持したまま、委譲元 Claude セッションのトー
 
 - Evidence Bundle → Brief → approval の trust boundary を弱めない。
 - `CLAUDE.md` の Boundaries（citation / path-containment / integrity / retry / approval ガードの
-  緩和禁止、`private: true` / `UNLICENSED` 維持、委譲 run による commit・push・PR・deploy 禁止）を守る。
+  緩和禁止、委譲 run による push・PR・deploy 禁止）を守る。
 - リリースゲート（typecheck / test / build / package:smoke）を常時グリーンに保つ。
 
 ## 非ゴール
@@ -46,7 +46,7 @@ trust boundary は維持したまま、委譲元 Claude セッションのトー
 semantic discovery、Windows 対応、Codex 以外の implementer。`DESIGN_AND_ROADMAP.md` の「Later」
 項目は本サイクルの対象外。
 
-※ 当初は public release / plugin 化も非ゴールだったが、2026-07-27 のオーナー判断（public 前提・
+※ 当初は public release も非ゴールだったが、2026-07-27 のオーナー判断（public 前提・
 MIT ライセンス）により Phase D としてスコープに追加した。実際の registry publish・push は
 オーナー明示トリガーのみで行う。
 
@@ -136,9 +136,11 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
   release workflow に一本化。npx/bunx 経由の install→launcher→CLI 実行を検証済み。
   なお npm は初回 publish で `latest` を必ず付与するため（撤回不可）、`latest` も当面 alpha 版を
   指す。安定版リリース時に自然に移行する。（2026-07-27 done）
-- [x] D-5: public marketplace 化＋thin plugin（operator skill の配布）。repo 内 marketplace、独立
+- [x] D-5: public marketplace 化＋thin plugin（後に D-6 で廃止）。repo 内 marketplace、独立
   plugin SemVer、core CLI exact compatibility、skill 同期検査、Claude strict validation、user-scope
   install/update smoke を整備。（2026-07-30 done）
+- [x] D-6: plugin 配布を廃止し、CLI 埋め込み skill の `setup` / `sync`、非同期 update cache、
+  version 単位で一度だけの opt-in auto-update、transcript programmatic API に統合。（2026-07-31 done）
 
 ### Phase 5 — 監査残件（小粒。trial で実害が出たものから拾う）
 
@@ -262,5 +264,7 @@ MIT ライセンス）により Phase D としてスコープに追加した。�
 - 2026-07-27: 初版。実利用調査の結果とオーナー合意（主眼・検証の場・権限・課金）を反映。
 - 2026-07-27: オーナー判断により public 配布（MIT・npm alpha・marketplace/plugin）を Phase D として
   スコープ追加。非ゴールから public release / plugin 化を除外。
+- 2026-07-31: 配布判断を更新。marketplace/plugin を廃止し、npm CLI/library と CLI-managed personal
+  skill に一本化。
 - 2026-07-29: 4 runs-dir・13 runs の trial レビュー。P5-5 修正・P5-9 の許容値表示＋gate_rejections
   計測修正。所見から P5-15〜P5-19 を起票、P5-14 の痛みを確認。T-2 の連続クリアは 0/3 から。

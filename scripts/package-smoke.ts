@@ -39,6 +39,10 @@ try {
   for (const required of [
     "package/bin/agent-delegator.cjs",
     "package/dist/agent-delegator",
+    "package/dist/index.js",
+    "package/dist/index.d.ts",
+    "package/dist/session.d.ts",
+    "package/dist/transcript.d.ts",
     "package/prompts/compile-brief.md",
     "package/prompts/implement.md",
     "package/prompts/iterate.md",
@@ -54,7 +58,10 @@ try {
   ]) {
     assert(entries.includes(required), `Packed archive is missing ${required}`);
   }
-  for (const forbidden of ["/src/", "/test/", "/scripts/", "CLAUDE_ACCEPTANCE_REPORT.md"]) {
+  for (const forbidden of [
+    "/src/", "/test/", "/scripts/", "/plugins/", "/.claude-plugin/", "/skills/",
+    "CLAUDE_ACCEPTANCE_REPORT.md",
+  ]) {
     assert(!entries.some((entry) => entry.includes(forbidden)), `Packed archive unexpectedly includes ${forbidden}`);
   }
 
@@ -78,6 +85,16 @@ try {
       JSON.stringify({ type: "assistant", message: { content: "Package smoke decision is accepted." } }),
     ].join("\n"),
   );
+  const librarySmoke = join(consumer, "library-smoke.ts");
+  await writeFile(
+    librarySmoke,
+    `import { normalizeTranscriptFile, resolveClaudeTranscript } from "@whatasoda/agent-delegator";
+const resolved = await resolveClaudeTranscript({ cwd: process.cwd(), transcriptPath: process.argv[2] });
+const turns = await normalizeTranscriptFile(resolved.path);
+if (resolved.method !== "explicit" || turns.length !== 2) process.exit(2);
+`,
+  );
+  await run([process.execPath, librarySmoke, transcript], consumer);
   const fakeCodex = join(binDirectory, "codex");
   await writeFile(
     fakeCodex,
@@ -131,6 +148,17 @@ process.stdout.write(JSON.stringify({
   );
 
   const installedCli = join(consumer, "node_modules", ".bin", "agent-delegator");
+  const claudeConfig = join(temporaryRoot, "claude-config");
+  const setup = await run(
+    [installedCli, "setup", "--claude-config-dir", claudeConfig, "--json"],
+    consumer,
+  );
+  assert(JSON.parse(setup.stdout).status === "created", "Installed CLI did not materialize its embedded skill");
+  assert(
+    (await readFile(join(claudeConfig, "skills", "agent-delegator", "SKILL.md"), "utf8"))
+      .includes("managed-by: @whatasoda/agent-delegator"),
+    "Installed CLI materialized an unmanaged or incomplete skill",
+  );
   // Invoke the launcher through an absolute interpreter path so only `bun` lookup depends on the
   // restricted PATH; `env node` disappearing as well would mask the message under test.
   const noBun = Bun.spawnSync([process.execPath, installedCli, "--version"], {

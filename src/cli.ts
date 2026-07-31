@@ -93,6 +93,18 @@ import {
 } from "./run-store.js";
 import { resolveClaudeTranscript } from "./session.js";
 import { normalizeTranscriptFile } from "./transcript.js";
+import embeddedOperatorSkill from "../skills/agent-delegator/SKILL.md";
+import {
+  cachedUpdateNotice,
+  compareSemver,
+  fetchLatestPackageVersion,
+  readUpdateState,
+  refreshUpdateState,
+  resolveClaudeConfigDir,
+  setAutoUpdate,
+  syncClaudeSkill,
+  writeUpdateState,
+} from "./distribution.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -222,6 +234,16 @@ const argumentSpecs: Record<string, ArgumentSpec> = {
   history: { values: ["--format", "--pattern", "--variant", "--limit"] },
   jobs: { values: ["--id"], flags: ["--active"] },
   doctor: { values: ["--cwd", "--codex-home", "--codex-auth-store"], flags: ["--json"] },
+  setup: {
+    values: ["--claude-config-dir"],
+    flags: ["--auto-update", "--no-auto-update", "--force", "--json"],
+  },
+  sync: { values: ["--claude-config-dir"], flags: ["--force", "--json"] },
+  update: { values: ["--claude-config-dir"], flags: ["--force", "--json"] },
+  "update-check": {
+    values: ["--claude-config-dir"],
+    flags: ["--refresh", "--json"],
+  },
   help: {},
   "--help": {},
   "-h": {},
@@ -3594,6 +3616,150 @@ async function commandDoctor(args: string[]): Promise<void> {
   );
 }
 
+function claudeConfigDirFromArgs(args: string[]): string {
+  return resolveClaudeConfigDir(option(args, "--claude-config-dir"));
+}
+
+async function runDistributionCommand(command: string, args: string[]): Promise<string> {
+  const child = Bun.spawn([command, ...args], { stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  if (exitCode !== 0) {
+    throw new Error(`${command} ${args.join(" ")} exited with ${exitCode}: ${stderr.trim() || stdout.trim()}`);
+  }
+  return stdout;
+}
+
+async function syncEmbeddedSkill(args: string[]): Promise<Awaited<ReturnType<typeof syncClaudeSkill>>> {
+  return syncClaudeSkill({
+    claudeConfigDir: claudeConfigDirFromArgs(args),
+    content: embeddedOperatorSkill,
+    force: flag(args, "--force"),
+  });
+}
+
+async function commandSync(args: string[]): Promise<void> {
+  const result = await syncEmbeddedSkill(args);
+  if (flag(args, "--json")) print({
+    claude_config_dir: result.claudeConfigDir,
+    path: result.path,
+    status: result.status,
+  });
+  else process.stdout.write(`${result.status}: ${result.path}\n`);
+}
+
+async function commandSetup(args: string[]): Promise<void> {
+  if (flag(args, "--auto-update") && flag(args, "--no-auto-update")) {
+    throw new Error("--auto-update and --no-auto-update cannot be combined");
+  }
+  const sync = await syncEmbeddedSkill(args);
+  const claudeConfigDir = claudeConfigDirFromArgs(args);
+  let state = await readUpdateState(claudeConfigDir);
+  if (flag(args, "--auto-update") || flag(args, "--no-auto-update")) {
+    state = await setAutoUpdate(claudeConfigDir, flag(args, "--auto-update"));
+  } else if (!(await exists(join(claudeConfigDir, "agent-delegator", "update-state.json")))) {
+    await writeUpdateState(claudeConfigDir, state);
+  }
+  const result = {
+    claude_config_dir: sync.claudeConfigDir,
+    path: sync.path,
+    status: sync.status,
+    auto_update: state.autoUpdate,
+  };
+  if (flag(args, "--json")) print(result);
+  else {
+    process.stdout.write(`${sync.status}: ${sync.path}\nAutomatic updates: ${state.autoUpdate ? "enabled" : "disabled"}\n`);
+  }
+}
+
+function registryUrl(): string | undefined {
+  const value = process.env.AGENT_DELEGATOR_UPDATE_REGISTRY_URL?.trim();
+  return value || undefined;
+}
+
+async function latestPackageVersion(): Promise<string> {
+  return fetchLatestPackageVersion({
+    packageName: packageJson.name,
+    tag: packageJson.publishConfig.tag,
+    registryUrl: registryUrl(),
+  });
+}
+
+async function performPackageUpdate(version: string, claudeConfigDir: string, force = false): Promise<void> {
+  const bunCommand = process.env.AGENT_DELEGATOR_BUN_COMMAND?.trim() || "bun";
+  await runDistributionCommand(bunCommand, ["add", "--global", `${packageJson.name}@${version}`]);
+  const globalBin = (await runDistributionCommand(bunCommand, ["pm", "bin", "-g"])).trim();
+  if (!globalBin) throw new Error("Bun did not report its global bin directory");
+  const syncArgs = ["sync", "--claude-config-dir", claudeConfigDir, "--json"];
+  if (force) syncArgs.push("--force");
+  await runDistributionCommand(join(globalBin, "agent-delegator"), syncArgs);
+}
+
+function launchBackgroundUpdateCheck(claudeConfigDir: string): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    const child = spawnProcess(
+      process.execPath,
+      [entry, "update-check", "--refresh", "--claude-config-dir", claudeConfigDir],
+      { detached: true, stdio: "ignore", env: process.env },
+    );
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function commandUpdateCheck(args: string[]): Promise<void> {
+  const claudeConfigDir = claudeConfigDirFromArgs(args);
+  if (flag(args, "--refresh")) {
+    const result = await refreshUpdateState({
+      claudeConfigDir,
+      currentVersion: packageJson.version,
+      latestVersion: latestPackageVersion,
+      autoUpdate: (version) => performPackageUpdate(version, claudeConfigDir),
+    });
+    if (flag(args, "--json")) print(result);
+    return;
+  }
+  const state = await readUpdateState(claudeConfigDir);
+  const notice = cachedUpdateNotice(state);
+  const refreshStarted = launchBackgroundUpdateCheck(claudeConfigDir);
+  if (flag(args, "--json")) print({ state, notice, refreshStarted });
+  else if (notice) process.stdout.write(`<agent-delegator-update>${notice}</agent-delegator-update>\n`);
+}
+
+async function commandUpdate(args: string[]): Promise<void> {
+  const claudeConfigDir = claudeConfigDirFromArgs(args);
+  const latest = await latestPackageVersion();
+  const target = compareSemver(latest, packageJson.version) > 0 ? latest : packageJson.version;
+  if (target === packageJson.version) {
+    await syncEmbeddedSkill(args);
+  } else {
+    await performPackageUpdate(target, claudeConfigDir, flag(args, "--force"));
+  }
+  const state = await readUpdateState(claudeConfigDir);
+  state.lastCheck = {
+    checkedAt: new Date().toISOString(),
+    currentVersion: target,
+    latestVersion: latest,
+    updateAvailable: false,
+    error: null,
+  };
+  await writeUpdateState(claudeConfigDir, state);
+  const result = {
+    status: "updated",
+    version: target,
+    skill_path: join(claudeConfigDir, "skills", "agent-delegator", "SKILL.md"),
+  };
+  if (flag(args, "--json")) print(result);
+  else process.stdout.write(`agent-delegator ${target}\nSynced ${result.skill_path}\n`);
+}
+
 function usage(): string {
   return `Usage:
   agent-delegator resolve-transcript [--cwd <path>] [--turns] [--json] [--allow-latest-fallback]
@@ -3614,6 +3780,10 @@ function usage(): string {
   agent-delegator report [--runs-dir <dir> | --all] [--format markdown|json]
   agent-delegator history [--pattern implementation|research|interactive|autonomous] [--variant <label>]
   agent-delegator doctor [--cwd <path>] [--json]
+  agent-delegator setup [--claude-config-dir <dir>] [--auto-update|--no-auto-update]
+  agent-delegator sync [--claude-config-dir <dir>]
+  agent-delegator update [--claude-config-dir <dir>]
+  agent-delegator update-check [--json]
   agent-delegator --version
 
 Any command also accepts --help to print this usage.
@@ -3623,6 +3793,9 @@ Common options:
   --session-id <id>         Resolve a specific Claude session
   --turns                   Preview stable visible turn numbers for transcript slicing
   --claude-config-dir <dir> Override ~/.claude
+  --auto-update             Enable one-attempt-per-version background CLI updates
+  --no-auto-update          Disable background CLI updates
+  --force                   Replace an unmanaged skill only after reviewing it
   --context <path>          Collect sources from a Context Request
   --project-profile <path>  Override agent-delegator.project.json
   --allow-latest-fallback   Allow compile to use the newest transcript for this cwd
@@ -3739,6 +3912,18 @@ async function main(): Promise<void> {
       break;
     case "doctor":
       await commandDoctor(args);
+      break;
+    case "setup":
+      await commandSetup(args);
+      break;
+    case "sync":
+      await commandSync(args);
+      break;
+    case "update":
+      await commandUpdate(args);
+      break;
+    case "update-check":
+      await commandUpdateCheck(args);
       break;
     case "help":
     case "--help":
