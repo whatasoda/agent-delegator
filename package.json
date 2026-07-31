@@ -1,6 +1,6 @@
 {
   "name": "@whatasoda/agent-delegator",
-  "version": "0.1.0-alpha.9",
+  "version": "0.1.0-alpha.10",
   "description": "Observable Claude-to-Codex research, implementation, and verification delegation",
   "license": "MIT",
   "publishConfig": {

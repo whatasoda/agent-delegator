@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.1.0-alpha.10] - 2026-07-31
+
 ### Added
 
 - Added privacy-preserving Claude transcript token capture with message-level deduplication and
