@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added
+
+- Added a typed ESM library surface for Claude transcript discovery, normalization, structured
+  decisions, secret redaction, and evidence rendering.
+- Added CLI-managed `setup`, `sync`, and `update` flows for the embedded Claude personal skill.
+- Added non-blocking cached update checks and opt-in automatic updates with one persistent attempt
+  per target version.
+
+### Changed
+
+- Replaced the separately versioned Claude Code plugin and marketplace with a single npm package
+  version for the CLI, library, and managed skill.
+
 ## [0.1.0-alpha.9] - 2026-07-31
 
 ### Added

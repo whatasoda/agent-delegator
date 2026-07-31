@@ -174,9 +174,10 @@ task-specific な選択は Context Request、長期的な project routing は pr
 
 ### 4.10 repository-local だが、独立可能な配置にする
 
-core CLI は application package から独立した専用 repository/package に置く。実利用と評価を先に
-行い、interface が安定してから Claude plugin と standalone executable を追加する。
-具体的な package 境界、release gate、Claude plugin、standalone executable の順序は
+core CLI は application package から独立した専用 repository/package に置く。Claude 連携に使う
+transcript helper は同じ package の programmatic API として公開し、operator skill は CLI に埋め込んで
+Claude の設定ディレクトリへ同期する。独立 plugin は設けない。具体的な package 境界、release gate、
+managed skill、standalone executable の順序は
 [`DISTRIBUTION.md`](./DISTRIBUTION.md) に固定する。
 
 ### 4.11 現在の runtime boundary
@@ -358,7 +359,7 @@ Stage 1 の意図は「自動で最適な context を探すこと」ではなく
 | Project knowledge | 単一 profile | profile composition、inheritance、versioning、organization policy |
 | Evaluation | run ごとの Claude rubric、Brief/worktree 自動比較、cross-run 集計 | rubric calibration、corpus-based extraction accuracy、citation precision、長期 outcome metrics |
 | Delegation patterns | approved implementation、bounded autonomous improvement、read-only research、同一 thread follow-up、独立verification | trial corpus に基づく pattern selection guidance と cost/quality trade-off |
-| Distribution | private versioned Bun package | standalone CLI、Claude plugin、adapter SDK、public release |
+| Distribution | public Bun CLI + transcript library + CLI-managed Claude skill | standalone executable、adapter SDK、stable release |
 | Observability | stage timing、usage 欠測率、failure taxonomy、attempt/checkpoint、比較可能な report | pricing-aware cost、trace viewer、dashboard、longitudinal alerts、外部 telemetry export |
 | Recovery | timeout、attempt、明示 retry、stale controller検出、opt-in headless process/Herdr | resumable operation journal、host crash 後の安全な自動診断、追加terminal adapter |
 
@@ -393,11 +394,11 @@ Stage 1 の意図は「自動で最適な context を探すこと」ではなく
 - lexical + semantic/hybrid index による横断 discovery
 - decision/provenance graph と supersession tracking
 - task complexity に応じた compiler/implementer model routing
-- adapter SDK、plugin interface、versioned schemas、migration tooling
+- adapter SDK、versioned schemas、migration tooling
 - standalone executable と署名済み release distribution
 - 実装結果を selection/compiler quality に戻す評価 loop
 
-## 8. public release / plugin へ進む条件
+## 8. stable release へ進む条件
 
 core CLI の履歴付き独立 package 化は trial の再現性を優先して完了した。当初はここに挙げる条件を
 満たすまで package を private / `UNLICENSED` に保つ方針だったが、2026-07-27 のオーナー判断で
@@ -407,7 +408,7 @@ core CLI の履歴付き独立 package 化は trial の再現性を優先して�
   しない（README の alpha compatibility statement が正）。publish はオーナーが起動する release
   workflow（Trusted Publishing / provenance）経由のみ。npm の publish は撤回不能である点を前提に、
   公開前に実 repository trial で schema の揺れを吸収することを推奨する。
-- **`latest` / 1.0、および互換性を約束する Claude plugin**: 従来どおり、次を満たすまで進まない。
+- **`latest` / 1.0、および互換性を約束する library API**: 従来どおり、次を満たすまで進まない。
 
 - 複数の実 task で Context Request と Evidence Bundle の schema が安定している。
 - 少なくとも2種類の project profile で routing が機能する。
@@ -416,8 +417,8 @@ core CLI の履歴付き独立 package 化は trial の再現性を優先して�
 - authentication、sandbox、configuration の host 差を文書化できている。
 - extraction と implementation outcome を再現可能に評価できる。
 
-切り出す際も、project profile と Claude skill は利用 repository 側に残し、CLI/core、schema、adapter
-interface、generic prompts を独立 package 側へ移す。
+project profile は利用 repository 側に残す。汎用 Claude skill は CLI bundle を唯一の配布元とし、
+`setup` / `sync` が user configuration へ materialize する。
 
 ## 9. 明示的な非目標
 
@@ -436,7 +437,7 @@ interface、generic prompts を独立 package 側へ移す。
 - stale source の基準を Git revision、mtime、明示 version のどれに寄せるか。
 - token budget と source priority を Context Request に含めるか、compiler policy に置くか。
 - approval を将来外部署名する必要があるか、それとも local workflow のままにするか。
-- standalone 化を npm package、single binary、Claude plugin のどれから始めるか。
+- single binary と追加 adapter SDK のどちらを先に安定化するか。
 
 ## 11. 判断を更新するときのルール
 

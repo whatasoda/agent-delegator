@@ -12,12 +12,21 @@
     "url": "git+https://github.com/whatasoda/agent-delegator.git"
   },
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "bin": {
     "agent-delegator": "bin/agent-delegator.cjs"
   },
   "files": [
     "bin/agent-delegator.cjs",
-    "dist/agent-delegator",
+    "dist",
     "prompts",
     "schemas",
     "examples",
@@ -33,7 +42,10 @@
     "agent-delegator": "bun src/cli.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "build": "bun build src/cli.ts --target=bun --outfile=dist/agent-delegator",
+    "build:cli": "bun build src/cli.ts --target=bun --outfile=dist/agent-delegator",
+    "build:library": "bun build src/index.ts --target=node --format=esm --outfile=dist/index.js",
+    "build:types": "tsc -p tsconfig.library.json",
+    "build": "bun run build:cli && bun run build:library && bun run build:types",
     "prepack": "bun run build",
     "package:smoke": "bun scripts/package-smoke.ts"
   },
