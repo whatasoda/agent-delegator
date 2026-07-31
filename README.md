@@ -539,6 +539,8 @@ Important files:
   Successful controller commits additionally retain `commit-intent.json` and `commit.json`.
 - `run-events.jsonl` — validated, append-only lifecycle events with timing, failure category,
   artifacts, metrics, model, and token usage when Codex emits it.
+- `claude-usage.json` — content-free Claude transcript usage observations, hashed message identities,
+  phase attribution, and capture cursors. It stores no prompt or response text.
 - `result.json` — latest canonical implementer result.
 - `verification.json` — latest canonical repository-policy verification result.
 - `iteration.json` — latest autonomous iteration outcome; each raw turn remains under
@@ -588,7 +590,7 @@ stderr log while the original lines stay in `events.jsonl`.
 
 Observation is designed for trial operation, not only incident debugging. A run records its input
 mix, initial tool identity plus each Codex attempt's tool revision/dirty fingerprint, stage
-durations, retries, model slots, Codex token usage, failure taxonomy, generated-versus-
+durations, retries, model slots, Claude and Codex token usage, failure taxonomy, generated-versus-
 approved Brief changes, approval baseline, Codex home/auth/network/writable-root/UI-session selection, detached backend/job IDs,
 verification outcome, and each implementation checkpoint. Checkpoint patches
 include tracked and untracked files; fingerprints also cover untracked file contents.
@@ -612,19 +614,31 @@ and implementation quality as not applicable and adds the optional `research_qua
 Repository state is still checkpointed at evaluation time, making an accidental write by a purported
 read-only trial visible.
 
+The selected transcript range is attributed to Claude's `design` phase at collection. Before each
+later mutating run command, usage added since the prior boundary is captured as `design`,
+`orchestration`, or `review`. Run `evaluate` after final diff and verification review so that review
+work is captured before the report is generated. Work after the last agent-delegator command cannot
+be observed until another run command establishes a boundary.
+When an old run without this artifact is next mutated, the selected design range is backfilled but
+the unknowable interval since collection is marked `partial`; partial runs are excluded from share
+and density calculations instead of understating Claude usage.
+
 `report` scans all run directories and emits a versioned JSON dataset or a Markdown summary. It
 includes acceptance, accepted-as-is, unrecovered implementation failures, post-implementation
 iteration failures, accepted timeout/interruption salvages,
 needs-decision/blocked counts, Brief edit rate,
 task/complexity/delegation-pattern/experiment-variant/model/tool-revision/outcome breakdowns, average
-ratings and stage durations, source volume, token totals, and token-telemetry coverage. Pattern and
-variant cohort tables join accepted outcomes and average ratings with Codex calls, tokens, controller
-interactions, and review bytes. The report also exposes controller-cost proxies for the delegating
+ratings and stage durations, source volume, token totals, and token-telemetry coverage. Pattern,
+variant, and actual implementation-size cohort tables join quality outcomes with Claude/Codex fresh
+tokens and Codex fresh share. Actual size uses the final successful checkpoint's patch bytes and
+changed-file count. The report also exposes Claude fresh tokens per patch KiB and changed file, so a
+high Codex share can be checked against task scale rather than treated as savings by itself.
+
+The report also exposes controller-cost proxies for the delegating
 agent: tracked CLI interactions per run, gate rejections (refusals that cost a diagnose-and-retry
 round trip without any Codex work), failed Codex calls (full paid retries), and the review-surface
-bytes (`brief.md`, `evidence.md`, `result.json`, `research.json`, or `verification.json`) the delegating agent must read. These are workflow
-observations, not Claude token measurements; they make delegation friction and review volume
-comparable across runs. Old runs without observation events remain reportable with
+bytes (`brief.md`, `evidence.md`, `result.json`, `research.json`, or `verification.json`) the delegating agent must read. These remain useful workflow
+observations alongside the direct Claude transcript measurements. Old runs without observation events remain reportable with
 unknown metadata and explicit telemetry gaps. Invalid/corrupt runs are listed instead of silently
 discarded.
 
@@ -652,9 +666,15 @@ does not duplicate raw evidence, prompts, results, or patches; those remain only
 directory, so evaluation requiring those artifacts must happen before that directory is deleted.
 The history file is private (`0600`) but can still contain sensitive objective and failure text.
 
-Token numbers are observations from Codex JSONL, not inferred billing data. A Codex version that
-does not emit usage remains visible as an uncovered call. The report does not calculate currency
-cost because model pricing and billing semantics are external and time-dependent.
+Token numbers are provider-reported observations, not inferred billing data. Codex fresh tokens are
+`input - cached_input + output`; Claude fresh tokens are
+`input + cache_creation_input + output`. Processed totals include cache reads. The report globally
+deduplicates hashed Claude message identities because Claude transcripts can repeat one API message
+across multiple content/tool fragments and across overlapping runs. Missing provider usage remains
+visible as a telemetry gap. Fresh share is evidence of where model work occurred, not by itself a
+causal proof that Claude usage was reduced; use the size-normalized Claude metrics and quality gates,
+and compare with a Claude-only baseline when making that claim. Currency is intentionally omitted
+because pricing and billing semantics are external and time-dependent.
 
 ## Safety properties
 

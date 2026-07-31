@@ -45,6 +45,7 @@ try {
     "package/prompts/research.md",
     "package/prompts/verify.md",
     "package/schemas/brief.schema.json",
+    "package/schemas/claude-usage.schema.json",
     "package/schemas/research-result.schema.json",
     "package/schemas/iteration-result.schema.json",
     "package/schemas/result.schema.json",

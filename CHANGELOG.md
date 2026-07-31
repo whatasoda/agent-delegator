@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+- Added privacy-preserving Claude transcript token capture with message-level deduplication and
+  design/orchestration/review phase attribution.
+- Added Claude/Codex fresh and processed token shares, actual implementation-size cohorts, and
+  Claude fresh-token density per patch KiB and changed file to JSON and Markdown reports.
+
+### Changed
+
+- Document that offload share must be interpreted with size-normalized Claude usage, quality gates,
+  and preferably a Claude-only baseline rather than claimed as causal savings by itself.
+
 ## [0.1.0-alpha.9] - 2026-07-31
 
 ### Added

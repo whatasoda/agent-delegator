@@ -110,6 +110,9 @@ operator が検証済みの CLI に揃える。`doctor` が失敗した状態で
    0 であることが健全性の目安）。全リポジトリ・全 worktree を跨いだ集計は
    `agent-delegator report --all --format=markdown`（run 作成時にマシンレベル registry へ自動登録
    される。消えた worktree の runs dir は unavailable として表示される）。
+   `evaluate` は呼び出し直前までのClaudeレビューusageをboundary captureするため、最終diff/verificationを
+   レビューした後に実行する。reportではCodex fresh shareを規模別に見つつ、Claude fresh tokens / patch KiB
+   と / changed file、accepted率を併記する。shareが高いだけで削減を断定せず、可能ならClaude-only baselineと比較する。
    最小状態履歴は `agent-delegator history` で任意のローカルディレクトリから確認できる。
    `post_implementation_iteration_failures` はinitial implementation failureと分けて評価する。
    implementationとverifyのnetwork/root policyは別に記録される。権限を広げたrunはroot別breakdownも

@@ -20,6 +20,7 @@ import {
   validateBriefEvidence,
 } from "./brief.js";
 import { CodexInvocationError, probeCodex, probeCodexAuthentication, runCodex } from "./codex.js";
+import { captureClaudeUsageBoundary, initializeClaudeUsage } from "./claude-usage.js";
 import {
   codexConfigArgs,
   codexProcessEnvironment,
@@ -1379,6 +1380,9 @@ async function prepareRun(
   state.projectProfilePath = collected.bundle.project_profile?.path ?? null;
   state.activeOperation = null;
   state.controllerPid = null;
+  await initializeClaudeUsage(runDir, collected.bundle).catch((error) => {
+    process.stderr.write(`agent-delegator: Claude token telemetry unavailable at collection: ${error instanceof Error ? error.message : String(error)}\n`);
+  });
   await writeRunState(runDir, state);
   await appendRunEvent(runDir, {
     stage: "collect", event: "completed", attempt: 1, duration_ms: Date.now() - collectStartedAt,
@@ -1389,7 +1393,7 @@ async function prepareRun(
       excluded_source_count: collected.bundle.excluded_sources.length,
     },
     artifacts: [
-      "context-request.json", "evidence-bundle.json", "evidence.md", "transcript.md",
+      "context-request.json", "evidence-bundle.json", "evidence.md", "transcript.md", "claude-usage.json",
       ...(policyWarning ? ["policy-warnings.json"] : []),
     ],
   });
@@ -3101,6 +3105,10 @@ async function withExistingRunLock<T>(
     }
   }
   try {
+    const state = await readRunState(runDir);
+    await captureClaudeUsageBoundary(runDir, state.transcriptPath, command).catch((error) => {
+      process.stderr.write(`agent-delegator: Claude token telemetry boundary capture failed: ${error instanceof Error ? error.message : String(error)}\n`);
+    });
     return await operation();
   } finally {
     const existing = await readOperationLock(lockPath);

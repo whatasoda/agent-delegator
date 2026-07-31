@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "claude-usage.schema.json",
+  "title": "Claude Usage Observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "updated_at", "method", "cursors", "captures", "messages"],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "method": { "const": "transcript-message-usage" },
+    "cursors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["transcript_id", "through_source_line"],
+        "properties": {
+          "transcript_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "through_source_line": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "captures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["captured_at", "command", "phase", "scope", "status", "added_messages", "detail"],
+        "properties": {
+          "captured_at": { "type": "string", "format": "date-time" },
+          "command": { "type": "string", "minLength": 1 },
+          "phase": { "enum": ["design", "orchestration", "review"] },
+          "scope": { "enum": ["selected-evidence", "since-prior-boundary"] },
+          "status": { "enum": ["captured", "unavailable"] },
+          "added_messages": { "type": "integer", "minimum": 0 },
+          "detail": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "messages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "transcript_id", "source_line", "timestamp", "model", "phase", "usage"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "transcript_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "source_line": { "type": "integer", "minimum": 1 },
+          "timestamp": { "type": ["string", "null"] },
+          "model": { "type": ["string", "null"] },
+          "phase": { "enum": ["design", "orchestration", "review"] },
+          "usage": { "$ref": "#/$defs/usage" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens"],
+      "properties": {
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "cache_creation_input_tokens": { "type": "integer", "minimum": 0 },
+        "cache_read_input_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

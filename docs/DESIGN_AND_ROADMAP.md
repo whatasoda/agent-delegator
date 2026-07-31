@@ -202,6 +202,13 @@ implement/resume 後 worktree も別 artifact として保持する。
 結合する仕組みである。`report` は複数 run を task type、complexity、model、結果、失敗分類などで比較する。
 usage を出さない Codex call も欠測率として残し、0 token と誤認しない。
 
+Claude 側は transcript の `message.usage` を本文抜きで `claude-usage.json` に残す。同じ API 応答が
+content/tool fragment ごとに重複するため message ID を hash 化して deduplicate し、収集対象の設計範囲と
+後続 command boundary 間を design / orchestration / review に帰属させる。主指標は cache read を除く fresh
+token の Codex 比率とし、processed 比率も別に残す。最終 successful checkpoint の patch bytes / changed files
+で実装規模を分類し、Claude fresh tokens / patch KiB と / changed file を併記する。高い Codex 比率だけで
+削減を断定せず、品質 gate を満たした規模別 cohort と Claude-only baseline で検証する。
+
 この観測は品質との相関を調べる地盤であり、現時点で因果を証明する評価器ではない。少数 run の率を
 一般化せず、評価 rubric の calibration と実 task corpus の蓄積を続ける。
 
@@ -334,7 +341,7 @@ checkpointだけを更新する。成功済み実装の後のiteration失敗もr
 - private run artifacts、timeout、stderr persistence、attempt count、attempt 単位の tool fingerprint、明示 retry、stale-state recovery
 - task metadata、append-only stage event、attempt ごとの raw output/prompt/checkpoint
 - generated/approved Brief comparison、Claude acceptance evaluation、cross-run JSON/Markdown report
-- token telemetry coverage、stage timing、failure taxonomy、task/model/outcome breakdown
+- Claude/Codex fresh・processed token telemetry、実装規模正規化、stage timing、failure taxonomy、task/model/outcome breakdown
 - read-only research、同一 thread follow-up、delegation pattern / experiment variant 比較
 - approved Brief に拘束された bounded same-thread implementation loop と iteration checkpoint
 - repository規約とBriefに基づく独立verification、根拠付きcheck artifact
@@ -359,7 +366,7 @@ Stage 1 の意図は「自動で最適な context を探すこと」ではなく
 | Evaluation | run ごとの Claude rubric、Brief/worktree 自動比較、cross-run 集計 | rubric calibration、corpus-based extraction accuracy、citation precision、長期 outcome metrics |
 | Delegation patterns | approved implementation、bounded autonomous improvement、read-only research、同一 thread follow-up、独立verification | trial corpus に基づく pattern selection guidance と cost/quality trade-off |
 | Distribution | private versioned Bun package | standalone CLI、Claude plugin、adapter SDK、public release |
-| Observability | stage timing、usage 欠測率、failure taxonomy、attempt/checkpoint、比較可能な report | pricing-aware cost、trace viewer、dashboard、longitudinal alerts、外部 telemetry export |
+| Observability | Claude/Codex usage、fresh share、実装規模正規化、欠測率、failure taxonomy、attempt/checkpoint、比較可能な report | pricing-aware cost、Claude-only baseline automation、trace viewer、dashboard、longitudinal alerts、外部 telemetry export |
 | Recovery | timeout、attempt、明示 retry、stale controller検出、opt-in headless process/Herdr | resumable operation journal、host crash 後の安全な自動診断、追加terminal adapter |
 
 ## 7. ロードマップ

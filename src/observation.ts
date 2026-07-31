@@ -6,6 +6,13 @@ import evaluationInputSchema from "../schemas/evaluation-input.schema.json";
 import evaluationSchema from "../schemas/evaluation.schema.json";
 import runEventSchema from "../schemas/run-event.schema.json";
 import type { BriefDraft } from "./brief.js";
+import {
+  readClaudeUsageMessages,
+  readClaudeUsageSummary,
+  summarizeClaudeUsageMessages,
+  type ClaudeUsageMessage,
+  type ClaudeUsageSummary,
+} from "./claude-usage.js";
 import type { CodexUsage } from "./codex.js";
 import { validateEvidenceBundle, type EvidenceBundle, type TaskMetadata } from "./evidence.js";
 import { appendLine, appendText, readJson, sha256File, writeJson, writeText, writeTextAtomic } from "./files.js";
@@ -350,6 +357,22 @@ export interface RunObservationSummary {
   usage: CodexUsage;
   usage_observed_calls: number;
   codex_calls: number;
+  claude_usage: ClaudeUsageSummary;
+  claude_usage_messages: ClaudeUsageMessage[];
+  implementation_surface: {
+    size: "none" | "small" | "medium" | "large" | "xlarge";
+    changed_files: number;
+    patch_bytes: number;
+  };
+  delegation_leverage: {
+    codex_fresh_tokens: number;
+    codex_processed_tokens: number;
+    codex_fresh_share_percent: number | null;
+    codex_processed_share_percent: number | null;
+    codex_output_share_percent: number | null;
+    claude_fresh_tokens_per_patch_kib: number | null;
+    claude_fresh_tokens_per_changed_file: number | null;
+  };
   models: { compiler: string | null; implementation: string | null; research: string | null; verification?: string | null };
   tool: { version: string; revision: string | null; dirty: boolean | null; artifact_sha256: string | null };
   failures: Record<string, number>;
@@ -380,6 +403,55 @@ async function fileSize(path: string): Promise<number | null> {
   } catch {
     return null;
   }
+}
+
+function implementationSurface(events: RunEvent[]): RunObservationSummary["implementation_surface"] {
+  const event = [...events].reverse().find((candidate) =>
+    ["implement", "resume", "iterate"].includes(candidate.stage) &&
+    candidate.event === "completed" &&
+    typeof candidate.metrics.changed_file_count === "number" &&
+    typeof candidate.metrics.patch_bytes === "number");
+  const changedFiles = event?.metrics.changed_file_count ?? 0;
+  const patchBytes = event?.metrics.patch_bytes ?? 0;
+  const size = changedFiles === 0 && patchBytes === 0
+    ? "none"
+    : changedFiles <= 5 && patchBytes <= 10 * 1024
+      ? "small"
+      : changedFiles <= 15 && patchBytes <= 64 * 1024
+        ? "medium"
+        : changedFiles <= 30 && patchBytes <= 128 * 1024
+          ? "large"
+          : "xlarge";
+  return { size, changed_files: changedFiles, patch_bytes: patchBytes };
+}
+
+function ratio(numerator: number, denominator: number): number | null {
+  return denominator > 0 ? Number((numerator / denominator * 100).toFixed(2)) : null;
+}
+
+function delegationLeverage(
+  usage: CodexUsage,
+  claudeUsage: ClaudeUsageSummary,
+  surface: RunObservationSummary["implementation_surface"],
+): RunObservationSummary["delegation_leverage"] {
+  const codexFresh = Math.max(0, usage.input_tokens - usage.cached_input_tokens) + usage.output_tokens;
+  const codexProcessed = usage.input_tokens + usage.output_tokens;
+  const outputTotal = usage.output_tokens + claudeUsage.usage.output_tokens;
+  return {
+    codex_fresh_tokens: codexFresh,
+    codex_processed_tokens: codexProcessed,
+    codex_fresh_share_percent: claudeUsage.status === "observed"
+      ? ratio(codexFresh, codexFresh + claudeUsage.fresh_tokens) : null,
+    codex_processed_share_percent: claudeUsage.status === "observed"
+      ? ratio(codexProcessed, codexProcessed + claudeUsage.processed_tokens) : null,
+    codex_output_share_percent: claudeUsage.status === "observed" ? ratio(usage.output_tokens, outputTotal) : null,
+    claude_fresh_tokens_per_patch_kib: claudeUsage.status === "observed" && surface.patch_bytes > 0
+      ? Number((claudeUsage.fresh_tokens / (surface.patch_bytes / 1024)).toFixed(2))
+      : null,
+    claude_fresh_tokens_per_changed_file: claudeUsage.status === "observed" && surface.changed_files > 0
+      ? Number((claudeUsage.fresh_tokens / surface.changed_files).toFixed(2))
+      : null,
+  };
 }
 
 export async function buildRunObservation(runDir: string): Promise<RunObservationSummary> {
@@ -416,6 +488,9 @@ export async function buildRunObservation(runDir: string): Promise<RunObservatio
     if (event.failure_category) failures[event.failure_category] = (failures[event.failure_category] ?? 0) + 1;
   }
   const researchResultBytes = await fileSize(join(runDir, "research.json"));
+  const claudeUsage = await readClaudeUsageSummary(runDir);
+  const claudeUsageMessages = await readClaudeUsageMessages(runDir);
+  const surface = implementationSurface(events);
   return {
     schema_version: "1",
     run_id: state.runId,
@@ -477,6 +552,10 @@ export async function buildRunObservation(runDir: string): Promise<RunObservatio
       event.metrics.codex_invoked === true && event.usage !== null).length,
     codex_calls: events.filter((event) =>
       (event.event === "completed" || event.event === "failed") && event.metrics.codex_invoked === true).length,
+    claude_usage: claudeUsage,
+    claude_usage_messages: claudeUsageMessages,
+    implementation_surface: surface,
+    delegation_leverage: delegationLeverage(usage, claudeUsage, surface),
     models: observedRunModels(state),
     tool: {
       version: state.delegatorVersion ?? "unknown",
@@ -544,6 +623,17 @@ export interface ObservationReport {
     input_tokens: number;
     cached_input_tokens: number;
     output_tokens: number;
+    codex_fresh_tokens: number;
+    comparable_codex_fresh_tokens: number;
+    claude_usage_observed_runs: number;
+    claude_usage_partial_runs: number;
+    claude_usage_messages: number;
+    claude_fresh_tokens: number;
+    claude_processed_tokens: number;
+    claude_phase_fresh_tokens: Record<"design" | "orchestration" | "review", number>;
+    codex_fresh_share_percent: number | null;
+    codex_processed_share_percent: number | null;
+    codex_output_share_percent: number | null;
     controller_commits: number;
     briefs_compared: number;
     briefs_edited: number;
@@ -556,6 +646,8 @@ export interface ObservationReport {
     source_count: number | null;
     source_bytes: number | null;
     brief_json_difference_count: number | null;
+    claude_fresh_tokens_per_patch_kib: number | null;
+    claude_fresh_tokens_per_changed_file: number | null;
     stage_duration_ms: Record<string, number | null>;
     ratings: {
       requirements_fidelity: number | null;
@@ -567,6 +659,7 @@ export interface ObservationReport {
   breakdowns: {
     task_type: Record<string, number>;
     complexity: Record<string, number>;
+    implementation_size: Record<string, number>;
     final_status: Record<string, number>;
     evaluation_outcome: Record<string, number>;
     brief_quality: Record<string, number>;
@@ -599,6 +692,7 @@ export interface ObservationReport {
   comparisons: {
     delegation_pattern: Record<string, ObservationCohort>;
     experiment_variant: Record<string, ObservationCohort>;
+    implementation_size: Record<string, ObservationCohort>;
   };
   runs: RunObservationSummary[];
   invalid_runs: { run_dir: string; error: string }[];
@@ -612,6 +706,13 @@ export interface ObservationCohort {
   input_tokens: number;
   cached_input_tokens: number;
   output_tokens: number;
+  codex_fresh_tokens: number;
+  comparable_codex_fresh_tokens: number;
+  claude_fresh_tokens: number;
+  claude_observed_runs: number;
+  codex_fresh_share_percent: number | null;
+  claude_fresh_tokens_per_patch_kib: number | null;
+  claude_fresh_tokens_per_changed_file: number | null;
   tracked_invocations: number;
   review_surface_bytes: number;
   average_ratings: {
@@ -670,15 +771,38 @@ function buildCohorts(
   }
   return Object.fromEntries([...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([key, group]) => {
     const evaluated = group.filter((run) => run.evaluation !== null);
+    const measured = group.filter((run) => run.claude_usage.status === "observed");
+    const claude = summarizeClaudeUsageMessages(measured.flatMap((run) => run.claude_usage_messages));
+    const inputTokens = group.reduce((sum, run) => sum + run.usage.input_tokens, 0);
+    const cachedInputTokens = group.reduce((sum, run) => sum + run.usage.cached_input_tokens, 0);
+    const outputTokens = group.reduce((sum, run) => sum + run.usage.output_tokens, 0);
+    const measuredInput = measured.reduce((sum, run) => sum + run.usage.input_tokens, 0);
+    const measuredCached = measured.reduce((sum, run) => sum + run.usage.cached_input_tokens, 0);
+    const measuredOutput = measured.reduce((sum, run) => sum + run.usage.output_tokens, 0);
+    const comparableCodexFresh = Math.max(0, measuredInput - measuredCached) + measuredOutput;
+    const codexFresh = Math.max(0, inputTokens - cachedInputTokens) + outputTokens;
+    const surfaceRuns = measured.filter((run) => run.implementation_surface.patch_bytes > 0);
+    const changedFiles = surfaceRuns.reduce((sum, run) => sum + run.implementation_surface.changed_files, 0);
     return [key, {
       runs: group.length,
       evaluated: evaluated.length,
       accepted: evaluated.filter((run) =>
         ["accepted-as-is", "accepted-with-changes"].includes(String(evaluationField(run, "outcome")))).length,
       codex_calls: group.reduce((sum, run) => sum + run.codex_calls, 0),
-      input_tokens: group.reduce((sum, run) => sum + run.usage.input_tokens, 0),
-      cached_input_tokens: group.reduce((sum, run) => sum + run.usage.cached_input_tokens, 0),
-      output_tokens: group.reduce((sum, run) => sum + run.usage.output_tokens, 0),
+      input_tokens: inputTokens,
+      cached_input_tokens: cachedInputTokens,
+      output_tokens: outputTokens,
+      codex_fresh_tokens: codexFresh,
+      comparable_codex_fresh_tokens: comparableCodexFresh,
+      claude_fresh_tokens: claude.fresh_tokens,
+      claude_observed_runs: measured.length,
+      codex_fresh_share_percent: ratio(comparableCodexFresh, comparableCodexFresh + claude.fresh_tokens),
+      claude_fresh_tokens_per_patch_kib: surfaceRuns.length
+        ? Number((claude.fresh_tokens / (surfaceRuns.reduce((sum, run) => sum + run.implementation_surface.patch_bytes, 0) / 1024)).toFixed(2))
+        : null,
+      claude_fresh_tokens_per_changed_file: changedFiles > 0
+        ? Number((claude.fresh_tokens / changedFiles).toFixed(2))
+        : null,
       tracked_invocations: group.reduce((sum, run) => sum + run.controller_cost.tracked_invocations, 0),
       review_surface_bytes: group.reduce((sum, run) => sum +
         (run.controller_cost.review_surface_bytes.brief_md ?? 0) +
@@ -726,7 +850,7 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
     ["accepted-as-is", "accepted-with-changes"].includes(String(evaluationField(run, "outcome"))));
   const compared = runs.filter((run) => run.brief_json_difference_count !== null);
   const breakdowns: ObservationReport["breakdowns"] = {
-    task_type: {}, complexity: {}, final_status: {}, evaluation_outcome: {}, brief_quality: {},
+    task_type: {}, complexity: {}, implementation_size: {}, final_status: {}, evaluation_outcome: {}, brief_quality: {},
     implementation_quality: {}, communication_quality: {}, failure_category: {}, compiler_model: {},
     failure_phase: {},
     implementation_model: {}, research_model: {}, verification_model: {}, verification_status: {},
@@ -741,6 +865,7 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
   for (const run of runs) {
     increment(breakdowns.task_type, run.metadata.task_type);
     increment(breakdowns.complexity, run.metadata.complexity);
+    increment(breakdowns.implementation_size, run.implementation_surface.size);
     increment(breakdowns.final_status, run.status);
     if (run.failure_phase) increment(breakdowns.failure_phase, run.failure_phase);
     increment(breakdowns.compiler_model, run.models.compiler);
@@ -817,6 +942,19 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
   }
   const codexCalls = runs.reduce((sum, run) => sum + run.codex_calls, 0);
   const usageObservedCalls = runs.reduce((sum, run) => sum + run.usage_observed_calls, 0);
+  const measuredRuns = runs.filter((run) => run.claude_usage.status === "observed");
+  const claudeUsage = summarizeClaudeUsageMessages(measuredRuns.flatMap((run) => run.claude_usage_messages));
+  const inputTokens = runs.reduce((sum, run) => sum + run.usage.input_tokens, 0);
+  const cachedInputTokens = runs.reduce((sum, run) => sum + run.usage.cached_input_tokens, 0);
+  const outputTokens = runs.reduce((sum, run) => sum + run.usage.output_tokens, 0);
+  const measuredInput = measuredRuns.reduce((sum, run) => sum + run.usage.input_tokens, 0);
+  const measuredCached = measuredRuns.reduce((sum, run) => sum + run.usage.cached_input_tokens, 0);
+  const measuredOutput = measuredRuns.reduce((sum, run) => sum + run.usage.output_tokens, 0);
+  const comparableCodexFresh = Math.max(0, measuredInput - measuredCached) + measuredOutput;
+  const codexFresh = Math.max(0, inputTokens - cachedInputTokens) + outputTokens;
+  const codexProcessed = measuredInput + measuredOutput;
+  const surfaceRuns = measuredRuns.filter((run) => run.implementation_surface.patch_bytes > 0);
+  const changedFiles = surfaceRuns.reduce((sum, run) => sum + run.implementation_surface.changed_files, 0);
   const stages = ["collect", "compile", "approve", "implement", "resume", "research", "follow-up", "iterate", "verify", "evaluate"];
   const stageDuration = Object.fromEntries(stages.map((stage) => [
     stage,
@@ -842,9 +980,25 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
       codex_calls: codexCalls,
       usage_observed_calls: usageObservedCalls,
       token_observation_percent: codexCalls ? Math.round(usageObservedCalls / codexCalls * 100) : null,
-      input_tokens: runs.reduce((sum, run) => sum + run.usage.input_tokens, 0),
-      cached_input_tokens: runs.reduce((sum, run) => sum + run.usage.cached_input_tokens, 0),
-      output_tokens: runs.reduce((sum, run) => sum + run.usage.output_tokens, 0),
+      input_tokens: inputTokens,
+      cached_input_tokens: cachedInputTokens,
+      output_tokens: outputTokens,
+      codex_fresh_tokens: codexFresh,
+      comparable_codex_fresh_tokens: comparableCodexFresh,
+      claude_usage_observed_runs: runs.filter((run) => run.claude_usage.status === "observed").length,
+      claude_usage_partial_runs: runs.filter((run) => run.claude_usage.status === "partial").length,
+      claude_usage_messages: claudeUsage.messages,
+      claude_fresh_tokens: claudeUsage.fresh_tokens,
+      claude_processed_tokens: claudeUsage.processed_tokens,
+      claude_phase_fresh_tokens: Object.fromEntries(
+        Object.entries(claudeUsage.phases).map(([phase, phaseUsage]) => [
+          phase,
+          phaseUsage.input_tokens + phaseUsage.cache_creation_input_tokens + phaseUsage.output_tokens,
+        ]),
+      ) as ObservationReport["summary"]["claude_phase_fresh_tokens"],
+      codex_fresh_share_percent: ratio(comparableCodexFresh, comparableCodexFresh + claudeUsage.fresh_tokens),
+      codex_processed_share_percent: ratio(codexProcessed, codexProcessed + claudeUsage.processed_tokens),
+      codex_output_share_percent: ratio(measuredOutput, measuredOutput + claudeUsage.usage.output_tokens),
       controller_commits: runs.reduce((sum, run) => sum + run.controller_commits.count, 0),
       briefs_compared: compared.length,
       briefs_edited: compared.filter((run) => run.brief_changed_by_claude).length,
@@ -863,6 +1017,12 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
       source_count: mean(runs.map((run) => run.sources.count)),
       source_bytes: mean(runs.map((run) => run.sources.bytes)),
       brief_json_difference_count: mean(compared.map((run) => run.brief_json_difference_count!)),
+      claude_fresh_tokens_per_patch_kib: surfaceRuns.length
+        ? Number((claudeUsage.fresh_tokens / (surfaceRuns.reduce((sum, run) => sum + run.implementation_surface.patch_bytes, 0) / 1024)).toFixed(2))
+        : null,
+      claude_fresh_tokens_per_changed_file: changedFiles > 0
+        ? Number((claudeUsage.fresh_tokens / changedFiles).toFixed(2))
+        : null,
       stage_duration_ms: stageDuration,
       ratings: {
         requirements_fidelity: averageRating(evaluated, "requirements_fidelity"),
@@ -875,6 +1035,7 @@ export async function buildObservationReport(runsDirInput: string | string[]): P
     comparisons: {
       delegation_pattern: buildCohorts(runs, (run) => run.delegation_pattern),
       experiment_variant: buildCohorts(runs, (run) => run.experiment_variant),
+      implementation_size: buildCohorts(runs, (run) => run.implementation_surface.size),
     },
     runs,
     invalid_runs: invalid,
@@ -890,11 +1051,15 @@ function markdownCell(value: unknown): string {
   return String(value ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 }
 
+function percentCell(value: number | null): string {
+  return value === null ? "n/a" : `${value}%`;
+}
+
 function cohortRows(values: Record<string, ObservationCohort>): string {
   const rows = Object.entries(values);
   return rows.length ? rows.map(([key, cohort]) =>
-    `| ${markdownCell(key)} | ${cohort.runs} | ${cohort.evaluated} | ${cohort.accepted} | ${cohort.codex_calls} | ${cohort.input_tokens} / ${cohort.cached_input_tokens} / ${cohort.output_tokens} | ${cohort.tracked_invocations} | ${cohort.review_surface_bytes} | ${cohort.average_ratings.implementation_quality ?? "n/a"} / ${cohort.average_ratings.research_quality ?? "n/a"} |`,
-  ).join("\n") : "| n/a | 0 | 0 | 0 | 0 | 0 / 0 / 0 | 0 | 0 | n/a / n/a |";
+    `| ${markdownCell(key)} | ${cohort.runs} | ${cohort.claude_observed_runs} | ${cohort.evaluated} | ${cohort.accepted} | ${cohort.codex_calls} | ${cohort.comparable_codex_fresh_tokens} / ${cohort.claude_fresh_tokens} | ${percentCell(cohort.codex_fresh_share_percent)} | ${cohort.claude_fresh_tokens_per_patch_kib ?? "n/a"} / ${cohort.claude_fresh_tokens_per_changed_file ?? "n/a"} | ${cohort.average_ratings.implementation_quality ?? "n/a"} / ${cohort.average_ratings.research_quality ?? "n/a"} |`,
+  ).join("\n") : "| n/a | 0 | 0 | 0 | 0 | 0 | 0 / 0 | n/a | n/a / n/a | n/a / n/a |";
 }
 
 export function renderObservationReport(report: ObservationReport): string {
@@ -917,6 +1082,12 @@ export function renderObservationReport(report: ObservationReport): string {
 - Briefs edited by Claude: ${report.summary.briefs_edited} / ${report.summary.briefs_compared} compared
 - Token telemetry coverage: ${report.summary.usage_observed_calls} / ${report.summary.codex_calls} Codex calls${report.summary.token_observation_percent === null ? "" : ` (${report.summary.token_observation_percent}%)`}
 - Input / cached input / output tokens observed: ${report.summary.input_tokens} / ${report.summary.cached_input_tokens} / ${report.summary.output_tokens}
+- Claude transcript usage coverage: ${report.summary.claude_usage_observed_runs} complete / ${report.summary.claude_usage_partial_runs} partial / ${report.summary.runs} runs (${report.summary.claude_usage_messages} unique complete-coverage messages)
+- Codex fresh tokens (all runs): ${report.summary.codex_fresh_tokens}
+- Comparable Codex / Claude fresh tokens: ${report.summary.comparable_codex_fresh_tokens} / ${report.summary.claude_fresh_tokens}; Codex fresh share: ${percentCell(report.summary.codex_fresh_share_percent)}
+- Claude fresh tokens by design / orchestration / review: ${report.summary.claude_phase_fresh_tokens.design} / ${report.summary.claude_phase_fresh_tokens.orchestration} / ${report.summary.claude_phase_fresh_tokens.review}
+- Codex processed / output share: ${percentCell(report.summary.codex_processed_share_percent)} / ${percentCell(report.summary.codex_output_share_percent)}
+- Claude fresh tokens per patch KiB / changed file: ${report.averages.claude_fresh_tokens_per_patch_kib ?? "n/a"} / ${report.averages.claude_fresh_tokens_per_changed_file ?? "n/a"}
 - Controller interactions tracked: ${report.summary.tracked_invocations} (gate rejections: ${report.summary.gate_rejections}, failed Codex calls: ${report.summary.codex_failed_calls})
 - Validated local controller commits: ${report.summary.controller_commits}
 - Review surface bytes (brief/evidence/result/research/verification): ${report.summary.review_surface_bytes}
@@ -1006,15 +1177,24 @@ ${breakdownRows(report.breakdowns.verification_ui_session_handoff)}
 
 ## Pattern comparison
 
-| Pattern | Runs | Evaluated | Accepted | Codex calls | Input / cached / output tokens | Interactions | Review bytes | Implementation / research rating |
-| --- | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |
+| Pattern | Runs | Usage-complete | Evaluated | Accepted | Codex calls | Comparable Codex / Claude fresh tokens | Codex fresh share | Claude fresh / patch KiB / file | Implementation / research rating |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | --- | ---: |
 ${cohortRows(report.comparisons.delegation_pattern)}
 
 ## Variant comparison
 
-| Variant | Runs | Evaluated | Accepted | Codex calls | Input / cached / output tokens | Interactions | Review bytes | Implementation / research rating |
-| --- | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |
+| Variant | Runs | Usage-complete | Evaluated | Accepted | Codex calls | Comparable Codex / Claude fresh tokens | Codex fresh share | Claude fresh / patch KiB / file | Implementation / research rating |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | --- | ---: |
 ${cohortRows(report.comparisons.experiment_variant)}
+
+## Implementation-size comparison
+
+Actual size uses the final successful implementation checkpoint: small is at most 5 files and 10 KiB,
+medium at most 15 files and 64 KiB, large at most 30 files and 128 KiB, and xlarge is above either limit.
+
+| Size | Runs | Usage-complete | Evaluated | Accepted | Codex calls | Comparable Codex / Claude fresh tokens | Codex fresh share | Claude fresh / patch KiB / file | Implementation / research rating |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | --- | ---: |
+${cohortRows(report.comparisons.implementation_size)}
 
 ## Outcomes
 
