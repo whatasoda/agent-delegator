@@ -11,6 +11,7 @@ function result(status: "completed" | "needs-decision" | "blocked" = "completed"
     verification: [],
     remaining_risks: [],
     question: status === "completed" ? "" : "Which approved option should be used?",
+    commit_message: "",
   };
 }
 
@@ -22,6 +23,13 @@ describe("implementation result", () => {
   test("rejects missing fields instead of accepting status alone", () => {
     expect(validateImplementationResult({ status: "completed" }).join("\n")).toContain(
       "must have required property 'summary'",
+    );
+  });
+
+  test("requires the strict-output commit message placeholder", () => {
+    const { commit_message: _commitMessage, ...missing } = result();
+    expect(validateImplementationResult(missing).join("\n")).toContain(
+      "must have required property 'commit_message'",
     );
   });
 

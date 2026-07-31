@@ -10,7 +10,7 @@ export interface ImplementationResult {
   verification: { command: string; status: "passed" | "failed" | "not-run"; details: string }[];
   remaining_risks: string[];
   question: string;
-  commit_message?: string;
+  commit_message: string;
 }
 
 const validateResultSchema = new Ajv2020({ allErrors: true }).compile<ImplementationResult>(resultSchema);

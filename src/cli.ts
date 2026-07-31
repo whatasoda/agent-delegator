@@ -787,9 +787,9 @@ async function configureControllerCommit(
 
 function controllerCommitPrompt(state: RunState): string {
   if (state.controllerCommitMode !== "on-success") {
-    return "Controller commit mode: never. Do not commit or modify Git metadata.";
+    return "Controller commit mode: never. Do not commit or modify Git metadata. Return commit_message as an empty string.";
   }
-  return "Controller commit mode: on-success. Do not run git commit or modify Git metadata yourself. After a validated completed or improved result, agent-delegator may create a local commit from the checkpointed worktree. Return a repository-appropriate commit_message when possible. This never authorizes push, tag, branch creation, merge, rebase, PR creation, release, or deployment.";
+  return "Controller commit mode: on-success. Do not run git commit or modify Git metadata yourself. After a validated completed or improved result, agent-delegator may create a local commit from the checkpointed worktree. Return a repository-appropriate commit_message, or an empty string when no appropriate suggestion applies. This never authorizes push, tag, branch creation, merge, rebase, PR creation, release, or deployment.";
 }
 
 function selectedCommitMessage(
@@ -797,10 +797,10 @@ function selectedCommitMessage(
   state: RunState,
   stage: "implement" | "resume" | "iterate",
   attempt: number,
-  suggested: string | undefined,
+  suggested: string,
 ): string {
   const explicit = option(args, "--commit-message")?.trim();
-  const proposed = suggested?.trim();
+  const proposed = suggested.trim();
   const fallbackObjective = state.objective.replace(/\s+/g, " ").trim().slice(0, 160);
   const message = explicit || proposed || ("chore: delegated " + (fallbackObjective || "implementation"));
   if (!message || message.length > 2000 || message.includes("\0")) {
@@ -816,7 +816,7 @@ async function createControllerCommit(
   stage: "implement" | "resume" | "iterate",
   attempt: number,
   expectedHead: string,
-  suggestedMessage: string | undefined,
+  suggestedMessage: string,
 ): Promise<ControllerCommitRecord | null> {
   if (state.controllerCommitMode !== "on-success") return null;
   const selectedBranch = state.controllerCommitSelections?.at(-1)?.branch;

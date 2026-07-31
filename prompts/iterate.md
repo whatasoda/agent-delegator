@@ -10,8 +10,9 @@ obstacle. Return `converged` when no further meaningful in-scope change is justi
 this turn changed at least one file.
 
 Do not commit or modify Git metadata yourself. The task prompt says whether the agent-delegator controller may
-make a local commit after validating an `improved` result and checkpoint. When enabled, provide a concise,
-repository-appropriate `commit_message`; it is advisory and does not authorize Git operations. Never push,
+make a local commit after validating an `improved` result and checkpoint. Always include `commit_message`:
+when enabled, provide a concise repository-appropriate suggestion; otherwise use an empty string. It is
+advisory and does not authorize Git operations. Never push,
 create or merge a PR, deploy, alter credentials, or mutate external systems. Return only the JSON object required
 by the supplied output schema.
 

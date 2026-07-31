@@ -10,7 +10,8 @@
     "brief_deviations",
     "verification",
     "remaining_risks",
-    "question"
+    "question",
+    "commit_message"
   ],
   "properties": {
     "status": { "type": "string", "enum": ["completed", "needs-decision", "blocked"] },
@@ -55,6 +56,11 @@
     },
     "remaining_risks": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "question": { "type": "string" },
-    "commit_message": { "type": "string", "maxLength": 2000, "pattern": "^[^\\u0000]*$" }
+    "commit_message": {
+      "type": "string",
+      "maxLength": 2000,
+      "pattern": "^[^\\u0000]*$",
+      "description": "Suggested controller commit message, or an empty string when no suggestion applies"
+    }
   }
 }

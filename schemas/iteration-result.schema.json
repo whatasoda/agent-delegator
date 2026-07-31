@@ -4,7 +4,7 @@
   "additionalProperties": false,
   "required": [
     "outcome", "summary", "changed_files", "implementation_decisions", "brief_deviations",
-    "verification", "remaining_risks", "question"
+    "verification", "remaining_risks", "question", "commit_message"
   ],
   "properties": {
     "outcome": { "type": "string", "enum": ["improved", "converged", "needs-decision", "blocked"] },
@@ -49,6 +49,11 @@
     },
     "remaining_risks": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "question": { "type": "string" },
-    "commit_message": { "type": "string", "maxLength": 2000, "pattern": "^[^\\u0000]*$" }
+    "commit_message": {
+      "type": "string",
+      "maxLength": 2000,
+      "pattern": "^[^\\u0000]*$",
+      "description": "Suggested controller commit message, or an empty string when no suggestion applies"
+    }
   }
 }

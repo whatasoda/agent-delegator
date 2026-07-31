@@ -147,7 +147,7 @@ const result = process.env.FAKE_CODEX_INVALID_RESULT === "1" ? { status: "comple
   verification: [],
   remaining_risks: [],
   question: isResume || process.env.FAKE_CODEX_IMPLEMENT_COMPLETED === "1" ? "" : "What exact greeting should be used?",
-  commit_message: process.env.FAKE_CODEX_COMMIT_MESSAGE
+  commit_message: process.env.FAKE_CODEX_COMMIT_MESSAGE ?? ""
 };
 const research = process.env.FAKE_CODEX_INVALID_RESEARCH === "1" ? { status: "answered" } : {
   status: "answered",
@@ -167,7 +167,7 @@ const iteration = {
   verification: [{ command: "inspect fixture", status: "passed", details: "fixture checked" }],
   remaining_risks: [],
   question: "",
-  commit_message: process.env.FAKE_CODEX_ITERATION_COMMIT_MESSAGE
+  commit_message: process.env.FAKE_CODEX_ITERATION_COMMIT_MESSAGE ?? ""
 };
 const verification = {
   status: process.env.FAKE_CODEX_VERIFICATION_STATUS ?? "passed",

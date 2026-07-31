@@ -14,6 +14,7 @@ const converged: IterationResult = {
   verification: [{ command: "bun run test", status: "passed", details: "All tests passed" }],
   remaining_risks: [],
   question: "",
+  commit_message: "",
 };
 
 describe("iteration result", () => {
