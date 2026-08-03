@@ -49,7 +49,7 @@
         "required": ["command", "status", "details"],
         "properties": {
           "command": { "type": "string", "minLength": 1 },
-          "status": { "type": "string", "enum": ["passed", "failed", "not-run"] },
+          "status": { "type": "string", "enum": ["passed", "failed", "not-run", "environment_blocked"] },
           "details": { "type": "string" }
         }
       }

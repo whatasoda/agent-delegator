@@ -148,6 +148,9 @@ writeFileSync(output, JSON.stringify({
     statement: "Run the package smoke verification",
     status: "accepted",
     rationale: "The package must retain its runtime assets",
+    provenance: "evidence",
+    owner_decision_by: null,
+    owner_decision_at: null,
     sources: [{ source_id: "source-001", turn: 2, quote: "Package smoke decision is accepted" }]
   }],
   constraints: [{
@@ -207,6 +210,8 @@ process.stdout.write(JSON.stringify({
   assert(
     installedSkill.startsWith("---\nname: agent-delegator\n") &&
       installedSkill.includes("managed-by: @whatasoda/agent-delegator") &&
+      installedSkill.includes("@whatasoda/agent-delegator@alpha") &&
+      !/@whatasoda\/agent-delegator@0\.1\.0-alpha\.\d+/.test(installedSkill) &&
       !installedSkill.includes("<h1>"),
     "Installed CLI materialized an unmanaged or incomplete skill",
   );

@@ -9,7 +9,7 @@
   "properties": {
     "outcome": { "type": "string", "enum": ["improved", "converged", "needs-decision", "blocked"] },
     "summary": { "type": "string", "minLength": 1 },
-    "changed_files": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "changed_files": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "implementation_decisions": {
       "type": "array",
       "items": {
@@ -42,7 +42,7 @@
         "required": ["command", "status", "details"],
         "properties": {
           "command": { "type": "string", "minLength": 1 },
-          "status": { "type": "string", "enum": ["passed", "failed", "not-run"] },
+          "status": { "type": "string", "enum": ["passed", "failed", "not-run", "environment_blocked"] },
           "details": { "type": "string" }
         }
       }

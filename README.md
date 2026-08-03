@@ -649,6 +649,12 @@ include tracked and untracked files; fingerprints also cover untracked file cont
 `brief.json` is the only editable Brief source. `brief.md` is a rendered review view; approval now
 refuses when it differs from the canonical rendering instead of silently overwriting hand edits.
 Move intentional changes into `brief.json`, then run `revalidate` before approval.
+When Claude or the owner resolves an `unresolved_items` entry after compilation, the resulting
+decision can stay in `decisions`: set `provenance` to `post_compile_owner_decision`, set
+`owner_decision_by` and `owner_decision_at` to the responsible identity and ISO timestamp, and use
+an empty `sources` array. Compiler-produced decisions use `provenance: evidence`, null owner fields,
+and collected citations. `revalidate` checks both forms without another Codex call. Legacy Briefs
+are upgraded to the evidence form when next revalidated or approved.
 
 After Claude has reviewed the diff and verification, copy and edit
 [`examples/evaluation-input.json`](./examples/evaluation-input.json), then run `evaluate`. The manual
@@ -834,7 +840,9 @@ for another compiler call to fix what Claude already knows how to correct. A fai
 workspace-write implementation/resume call requires `implement --retry` or `resume --retry`;
 an iteration failure can retry the same thread with `loop --retry`, or restart from the approved
 Brief in a new thread with `implement --retry`. Inspect the repository first,
-and add `--allow-worktree-change` only when the partial diff is understood. When a resume can no
+and add `--allow-worktree-change` only when the already-applied diff is understood. Failure messages
+include changed-file count and patch bytes without assuming the diff is partial or that retry is the
+right next action. When a resume can no
 longer reach its Codex thread (for example the Codex session store was pruned), `implement --retry`
 starts a fresh implementation attempt from the same approved Brief in a new Codex session instead of
 abandoning the run. Retries are never automatic because a prior implementer may already have changed
@@ -853,8 +861,12 @@ to the same checkout. Stale locks whose controller PID is gone are recovered aut
 lock fails with the owning command, run ID, and PID instead of surfacing an unrelated fingerprint
 race.
 
-`needs-decision` means Claude can answer one focused design/contract question. `blocked` means an
-operational obstacle rather than a missing design choice. A Resume Addendum may answer the previous
+`needs-decision` means Claude can answer one focused design/contract question. A malformed
+`blocked` result with an empty question is preserved and normalized to `needs-decision`, with the
+summary used as its question and the normalization recorded beside the raw attempt result.
+`blocked` means an operational obstacle prevents implementation itself rather than merely preventing
+verification. A completed implementation may contain `verification[].status: environment_blocked`;
+those entries and `remaining_risks` are the owner's explicit rerun list. A Resume Addendum may answer the previous
 focused question only. If the answer changes a MUST, scope, acceptance criterion, or product
 behavior, edit/recompile/reapprove the Brief or start a new run instead. Responses are recorded in
 `decision-ledger.jsonl` and resume the same Codex thread.

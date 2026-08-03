@@ -28,8 +28,11 @@ supplied result schema.
 The task prompt states whether workspace network access is enabled, disabled, or inherited/unknown.
 It may also declare one owner-started UI session. Treat that name as the only permitted attach
 target, not as proof the session is live and not as permission to discover or launch alternatives.
-It may not have credentials. Record an unavailable owner-only
-check as `not-run` with a precise reason and keep it in remaining risks; do not return `blocked`
-solely because a deploy, upload, production check, or other integration-owner action is unavailable.
-Return `blocked` only when the missing environment prevents required local correctness work or leaves
-an acceptance criterion impossible to assess.
+It may not have credentials. Record an unavailable owner-only check as `not-run` with a precise
+reason. Record a required local check that the sandbox or missing environment prevents as
+`environment_blocked`. In both cases, keep the unverified condition in remaining risks. Return
+`completed` when the implementation and local correctness work are complete even if one or more
+checks are `environment_blocked`; this tells the integration owner exactly which checks to rerun.
+Do not return `blocked` solely because verification or an integration-owner action is unavailable.
+Return `blocked` only when the missing environment prevents the implementation itself from being
+completed, and always include a focused question describing what must be supplied or changed.

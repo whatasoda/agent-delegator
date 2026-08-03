@@ -14,12 +14,12 @@
         "required": ["finding", "basis"],
         "properties": {
           "finding": { "type": "string", "minLength": 1 },
-          "basis": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+          "basis": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
         }
       }
     },
-    "recommendations": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
-    "uncertainties": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "recommendations": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "uncertainties": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "follow_up_question": { "type": "string" }
   }
 }

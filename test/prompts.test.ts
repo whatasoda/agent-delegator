@@ -50,10 +50,15 @@ describe("delegation prompts", () => {
     expect(compiler).toContain("Do not assume the sandbox can launch Chrome");
     expect(compiler).toContain("do not normalize or reconstruct it");
     expect(compiler).toContain("Never present an unresolved URL, path, identifier");
+    expect(compiler).toContain("`provenance` to `evidence`");
+    expect(compiler).toContain("`post_compile_owner_decision`");
     expect(implementer).toContain("Record an unavailable owner-only check as `not-run`");
+    expect(implementer).toContain("`environment_blocked`");
+    expect(implementer).toContain("Return `completed` when the implementation and local correctness work are complete");
     expect(implementer).toContain("Always include `commit_message`");
-    expect(implementer).toContain("do not return `blocked` solely because");
-    expect(iterator).toContain("network-dependent checks as `not-run`");
+    expect(implementer).toContain("Do not return `blocked` solely because");
+    expect(iterator).toContain("Record unavailable owner-only checks as `not-run`");
+    expect(iterator).toContain("`environment_blocked`");
     expect(verifier).toContain("read the repository's durable instructions");
     expect(verifier).toContain("do not guess a generic package-manager command");
   });

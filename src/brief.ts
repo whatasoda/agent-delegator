@@ -11,6 +11,9 @@ export interface BriefDecision {
   statement: string;
   status: "accepted" | "rejected" | "superseded" | "proposed" | "unresolved";
   rationale: string;
+  provenance?: "evidence" | "post_compile_owner_decision";
+  owner_decision_by?: string | null;
+  owner_decision_at?: string | null;
   sources: BriefSource[];
 }
 
@@ -39,6 +42,40 @@ export interface BriefDraft {
 }
 
 const validateBriefSchema = new Ajv2020({ allErrors: true }).compile<BriefDraft>(briefSchema);
+
+export function normalizeBriefDraft(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const normalized = structuredClone(value) as Record<string, unknown>;
+  if (!Array.isArray(normalized.decisions)) return normalized;
+  for (const item of normalized.decisions) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+    const decision = item as Record<string, unknown>;
+    if (!("provenance" in decision)) decision.provenance = "evidence";
+    if (!("owner_decision_by" in decision)) decision.owner_decision_by = null;
+    if (!("owner_decision_at" in decision)) decision.owner_decision_at = null;
+  }
+  return normalized;
+}
+
+function isIsoTimestamp(value: string | null | undefined): value is string {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = Number(match[7] ?? 0);
+  const offsetMinute = Number(match[8] ?? 0);
+  if (hour > 23 || minute > 59 || second > 59 || offsetHour > 23 || offsetMinute > 59) return false;
+  const calendar = new Date(Date.UTC(year, month - 1, day));
+  return calendar.getUTCFullYear() === year &&
+    calendar.getUTCMonth() === month - 1 &&
+    calendar.getUTCDate() === day &&
+    !Number.isNaN(Date.parse(value));
+}
 
 function bullets(items: string[]): string {
   return items.length > 0 ? items.map((item) => `- ${item}`).join("\n") : "- None recorded";
@@ -368,16 +405,36 @@ export function validateBriefEvidence(
 }
 
 export function validateBrief(brief: unknown): string[] {
-  if (!validateBriefSchema(brief)) {
+  const normalized = normalizeBriefDraft(brief);
+  if (!validateBriefSchema(normalized)) {
     return (validateBriefSchema.errors ?? []).map((error) => {
       const location = error.instancePath || "/";
       return `Brief schema ${location} ${error.message ?? "is invalid"}`;
     });
   }
+  const validatedBrief = normalized;
   const errors: string[] = [];
-  if (brief.schema_version !== "1") errors.push("schema_version must be 1");
-  if (!brief.objective.trim()) errors.push("objective is empty");
-  for (const [index, constraint] of brief.constraints.entries()) {
+  if (validatedBrief.schema_version !== "1") errors.push("schema_version must be 1");
+  if (!validatedBrief.objective.trim()) errors.push("objective is empty");
+  for (const [index, decision] of validatedBrief.decisions.entries()) {
+    if (decision.provenance === "post_compile_owner_decision") {
+      if (decision.sources.length > 0) {
+        errors.push(`Post-compile owner decision ${index + 1} must not cite collected evidence`);
+      }
+      if (!decision.owner_decision_by?.trim()) {
+        errors.push(`Post-compile owner decision ${index + 1} must name its decision owner`);
+      }
+      if (!isIsoTimestamp(decision.owner_decision_at)) {
+        errors.push(`Post-compile owner decision ${index + 1} must have a valid decision timestamp`);
+      }
+    } else {
+      if (decision.sources.length === 0) errors.push(`Decision ${index + 1} has no evidence source`);
+      if (decision.owner_decision_by !== null || decision.owner_decision_at !== null) {
+        errors.push(`Evidence decision ${index + 1} must not contain post-compile owner metadata`);
+      }
+    }
+  }
+  for (const [index, constraint] of validatedBrief.constraints.entries()) {
     if (constraint.level === "must" && constraint.sources.length === 0) {
       errors.push(`MUST constraint ${index + 1} has no evidence source`);
     }
@@ -392,7 +449,7 @@ export function validateBrief(brief: unknown): string[] {
       if (action) errors.push(`MUST constraint ${index + 1} requires forbidden delegated action: ${action}`);
     }
   }
-  for (const [index, command] of brief.verification.entries()) {
+  for (const [index, command] of validatedBrief.verification.entries()) {
     const action = forbiddenAction(command);
     if (action) errors.push(`Verification item ${index + 1} requires forbidden delegated action: ${action}`);
   }
@@ -403,7 +460,9 @@ export function renderBrief(brief: BriefDraft): string {
   const decisions = brief.decisions
     .map(
       (decision) =>
-        `- **${decision.status}** — ${decision.statement}\n  - Why: ${decision.rationale}\n  - Evidence: ${sources(decision.sources)}`,
+        `- **${decision.status}** — ${decision.statement}\n  - Why: ${decision.rationale}\n  - ${decision.provenance === "post_compile_owner_decision"
+          ? `Owner decision: ${decision.owner_decision_by} at ${decision.owner_decision_at}`
+          : `Evidence: ${sources(decision.sources)}`}`,
     )
     .join("\n");
   const constraints = brief.constraints

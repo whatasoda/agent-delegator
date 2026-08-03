@@ -28,7 +28,10 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["statement", "status", "rationale", "sources"],
+        "required": [
+          "statement", "status", "rationale", "provenance", "owner_decision_by",
+          "owner_decision_at", "sources"
+        ],
         "properties": {
           "statement": { "type": "string" },
           "status": {
@@ -36,6 +39,12 @@
             "enum": ["accepted", "rejected", "superseded", "proposed", "unresolved"]
           },
           "rationale": { "type": "string" },
+          "provenance": {
+            "type": "string",
+            "enum": ["evidence", "post_compile_owner_decision"]
+          },
+          "owner_decision_by": { "type": ["string", "null"] },
+          "owner_decision_at": { "type": ["string", "null"] },
           "sources": {
             "type": "array",
             "items": {

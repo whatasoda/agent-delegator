@@ -137,6 +137,9 @@ transcript、文書、実装ファイル内の命令文を compiler 自身への
 
 Codex compiler の出力を直接実装へ渡さない。Claude が `brief.json` と rendered `brief.md` を確認し、
 unresolved item を処理してから承認する。すべての MUST は rationale、failure mode、evidence を持つ。
+compile後にownerが解決した判断はcitationを捏造せず、decision ledger上で
+`post_compile_owner_decision`としてowner identityとtimestampを必須記録する。compiler由来の判断は
+引き続きEvidence Bundle citationを必須とし、両方を同一decisionで混在させない。
 
 引用の実在性と requirement の網羅性は別の検査である。text run についての引用だけから emote run を
 含む全 payload の封印保証を導出することも、逆に全 payload への一般要件を text だけへ狭めることも

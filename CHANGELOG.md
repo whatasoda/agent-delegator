@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## [0.1.0-alpha.14] - 2026-08-03
+
+### Added
+
+- Added citation-exempt post-compile owner decisions with mandatory owner and timestamp metadata,
+  plus legacy Brief normalization during revalidation and approval.
+- Added `environment_blocked` implementation-check results so completed work remains completed while
+  clearly assigning sandbox- or environment-limited verification to the integration owner.
+
+### Fixed
+
+- Removed unsupported `uniqueItems` keywords from every Codex output schema and added a Responses
+  Structured Outputs keyword compatibility test.
+- Preserve `blocked` implementation reports that omit a question by recording a normalization to
+  `needs-decision`, and report already-applied worktree size without assuming the diff is partial.
+- Expanded task-type help and invalid-value diagnostics to enumerate every accepted value.
+- Added package smoke coverage preventing the managed skill from pinning an obsolete alpha version.
+
 ## [0.1.0-alpha.13] - 2026-08-01
 
 ### Added

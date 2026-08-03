@@ -3,6 +3,7 @@ import {
   repairBriefCitationSources,
   repairBriefCitationTurns,
   renderBrief,
+  normalizeBriefDraft,
   type BriefDraft,
   validateBrief,
   validateBriefEvidence,
@@ -48,6 +49,53 @@ describe("Brief", () => {
     expect(validateBrief(draft)).toEqual([]);
     expect(renderBrief(draft)).toContain("## Decision ledger");
     expect(renderBrief(draft)).toContain("**MUST**");
+  });
+
+  test("records a citation-exempt post-compile owner decision with identity and time", () => {
+    const draft = brief();
+    draft.decisions.push({
+      statement: "Treat duplicate test IDs as a failing smoke gate",
+      status: "accepted",
+      rationale: "This resolves the compiler's unresolved coverage gap",
+      provenance: "post_compile_owner_decision",
+      owner_decision_by: "whatasoda",
+      owner_decision_at: "2026-08-03T12:34:56+09:00",
+      sources: [],
+    });
+
+    expect(validateBrief(draft)).toEqual([]);
+    expect(renderBrief(draft)).toContain("Owner decision: whatasoda at 2026-08-03T12:34:56+09:00");
+  });
+
+  test("rejects incomplete or evidence-mixing post-compile owner decisions", () => {
+    const draft = brief();
+    Object.assign(draft.decisions[0]!, {
+      provenance: "post_compile_owner_decision",
+      owner_decision_by: "",
+      owner_decision_at: "not-a-date",
+    });
+    const errors = validateBrief(draft).join("\n");
+    expect(errors).toContain("must not cite collected evidence");
+    expect(errors).toContain("must name its decision owner");
+    expect(errors).toContain("must have a valid decision timestamp");
+
+    draft.decisions[0]!.owner_decision_by = "owner";
+    draft.decisions[0]!.owner_decision_at = "2026-02-30T12:00:00Z";
+    expect(validateBrief(draft)).toContain(
+      "Post-compile owner decision 1 must have a valid decision timestamp",
+    );
+  });
+
+  test("upgrades legacy decisions to evidence provenance without mutating the source", () => {
+    const draft = brief();
+    const normalized = normalizeBriefDraft(draft) as BriefDraft;
+    expect(normalized.decisions[0]).toMatchObject({
+      provenance: "evidence",
+      owner_decision_by: null,
+      owner_decision_at: null,
+    });
+    expect(draft.decisions[0]!.provenance).toBeUndefined();
+    expect(validateBrief(draft)).toEqual([]);
   });
 
   test("rejects a MUST without evidence", () => {

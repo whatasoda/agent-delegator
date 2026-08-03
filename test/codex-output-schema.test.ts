@@ -13,6 +13,54 @@ const codexOutputSchemas = {
   verification: verificationResultSchema,
 };
 
+const structuredOutputKeywords = new Set([
+  "$defs",
+  "$ref",
+  "$schema",
+  "additionalProperties",
+  "anyOf",
+  "const",
+  "description",
+  "enum",
+  "exclusiveMaximum",
+  "exclusiveMinimum",
+  "format",
+  "items",
+  "maxLength",
+  "maxItems",
+  "maximum",
+  "minLength",
+  "minItems",
+  "minimum",
+  "multipleOf",
+  "pattern",
+  "properties",
+  "required",
+  "type",
+]);
+
+function structuredOutputKeywordErrors(
+  value: unknown,
+  path = "$",
+  errors: string[] = [],
+): string[] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return errors;
+  const schema = value as Record<string, unknown>;
+  for (const [keyword, child] of Object.entries(schema)) {
+    if (!structuredOutputKeywords.has(keyword)) errors.push(`${path} uses unsupported keyword ${keyword}`);
+    if ((keyword === "properties" || keyword === "$defs") && typeof child === "object" && child !== null) {
+      for (const [name, nested] of Object.entries(child as Record<string, unknown>)) {
+        structuredOutputKeywordErrors(nested, `${path}.${keyword}.${name}`, errors);
+      }
+    } else if (keyword === "items") {
+      structuredOutputKeywordErrors(child, `${path}.items`, errors);
+    } else if (keyword === "anyOf" && Array.isArray(child)) {
+      child.forEach((nested, index) => structuredOutputKeywordErrors(nested, `${path}.anyOf[${index}]`, errors));
+    }
+  }
+  return errors;
+}
+
 function strictObjectErrors(value: unknown, path = "$", errors: string[] = []): string[] {
   if (Array.isArray(value)) {
     value.forEach((item, index) => strictObjectErrors(item, `${path}[${index}]`, errors));
@@ -40,6 +88,10 @@ describe("Codex structured output schemas", () => {
   for (const [name, schema] of Object.entries(codexOutputSchemas)) {
     test(`${name} is strict-compatible at every object`, () => {
       expect(strictObjectErrors(schema)).toEqual([]);
+    });
+
+    test(`${name} uses only Responses Structured Outputs keywords`, () => {
+      expect(structuredOutputKeywordErrors(schema)).toEqual([]);
     });
   }
 });

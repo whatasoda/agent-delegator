@@ -16,6 +16,9 @@ advisory and does not authorize Git operations. Never push,
 create or merge a PR, deploy, alter credentials, or mutate external systems. Return only the JSON object required
 by the supplied output schema.
 
-Follow the task prompt's exact network-access statement. Record unavailable owner-only or
-network-dependent checks as `not-run` and as remaining risks. Do not return
-`blocked` solely because integration-owner actions cannot run in the workspace sandbox.
+Follow the task prompt's exact network-access statement. Record unavailable owner-only checks as
+`not-run`. Record required local checks prevented by sandbox, network, or missing environment as
+`environment_blocked`. Keep both kinds in remaining risks. Return `converged` or `improved` when
+the implementation work is complete even with `environment_blocked` checks; do not return
+`blocked` solely because verification or integration-owner actions cannot run. A `blocked` outcome
+must mean the implementation itself cannot continue and must include a focused question.

@@ -70,6 +70,9 @@ description: >-
    `evidence-bundle.json` の一覧と exclusions で確認する。
 3. 修正が必要なら **`brief.json` を編集**（`brief.md` は表示用で、差分があると approve は拒否する）→
    `agent-delegator revalidate --run <id>`（Codex 再課金なしの完全再検証・決定的修復）。
+   compile後にownerがunresolvedを決めた場合は、その決定を`decisions[]`へ追加し、
+   `provenance: "post_compile_owner_decision"`、`owner_decision_by`、ISO形式の`owner_decision_at`、
+   `sources: []`を設定する。compiler由来のdecisionは`provenance: "evidence"`とowner欄nullのままにする。
 4. **approve**: `agent-delegator approve --run <id>`
    - unresolved を残して進む場合のみ `--allow-unresolved`（理由をユーザーに示す）
    - compile 後にコミットが挟まった場合は、新 base で Brief を再確認してから `--allow-base-change`
@@ -104,6 +107,8 @@ description: >-
      `agent-delegator verify --run <id>` で repository 規約と Brief に基づく独立 smoke を委譲する。
      `verification.json` の command / basis / status を確認し、最終統合判断は自分で行う
      controller commit modeならdiffに加えて全`controllerCommits[].sha`をレビューし、push等は別途ownerが行う
+     `verification[].status: environment_blocked`は実装未完了ではなくowner側で再実行する検証一覧。
+     `remaining_risks`と照合して統合前に実測する
    - `needs-decision` → focused question に1つだけ答える:
      `agent-delegator resume --run <id> --message="<決定と理由>"`（background）。
      回答が MUST / scope / 受入条件を変えるなら resume せず Brief 編集 → revalidate → 再 approve
@@ -145,7 +150,7 @@ description: >-
 | --- | --- |
 | compile が citation/schema 検証で failed | `revalidate --run <id>`（brief.json を seed → 手修正 → 再検証。Codex 再実行不要） |
 | compile がそれ以外で failed | `compile --run <id> --retry` |
-| implement / resume が failed | attempt の `checkpoint.json` / `worktree.patch` と実 worktree を確認してから `implement --run <id> --retry`。timeout/interrupt 後の部分 diff を理解した場合のみ `--allow-worktree-change` |
+| implement / resume が failed | 一次メッセージのchanged-file count/patch bytes、attemptのraw result、`checkpoint.json`、実worktreeを確認し、成果を受け取るかresume/retryするかを判断。再実行が必要で適用済みdiffを理解した場合のみ`--allow-worktree-change` |
 | loop iteration が failed | 同一 thread は `loop --run <id> --retry`、thread 喪失時は approved Brief から `implement --run <id> --retry` |
 | resume の Codex thread 喪失 | `implement --run <id> --retry`（approved Brief から新セッションで再実装） |
 | active のまま固着（PID 再利用等） | Codex プロセスの残存がないことを確認して `status --run <id> --force-fail` |

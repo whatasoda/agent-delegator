@@ -1,6 +1,6 @@
 import Ajv2020 from "ajv/dist/2020.js";
 import schema from "../schemas/iteration-result.schema.json";
-import type { ImplementationResult } from "./result.js";
+import type { ImplementationResult, ImplementationVerificationStatus } from "./result.js";
 
 export interface IterationResult {
   outcome: "improved" | "converged" | "needs-decision" | "blocked";
@@ -8,13 +8,41 @@ export interface IterationResult {
   changed_files: string[];
   implementation_decisions: { decision: string; reason: string }[];
   brief_deviations: { deviation: string; reason: string }[];
-  verification: { command: string; status: "passed" | "failed" | "not-run"; details: string }[];
+  verification: { command: string; status: ImplementationVerificationStatus; details: string }[];
   remaining_risks: string[];
   question: string;
   commit_message: string;
 }
 
 const validateSchema = new Ajv2020({ allErrors: true }).compile<IterationResult>(schema);
+
+export interface IterationResultNormalization {
+  code: "blocked_missing_question";
+  original_outcome: "blocked";
+  normalized_outcome: "needs-decision";
+  synthesized_question: string;
+}
+
+export function normalizeIterationResult(value: unknown): {
+  value: unknown;
+  normalization: IterationResultNormalization | null;
+} {
+  if (!validateSchema(value) || value.outcome !== "blocked" || value.question.trim()) {
+    return { value, normalization: null };
+  }
+  const normalized = structuredClone(value);
+  normalized.outcome = "needs-decision";
+  normalized.question = normalized.summary.trim() || "Review the iteration result and decide how to proceed.";
+  return {
+    value: normalized,
+    normalization: {
+      code: "blocked_missing_question",
+      original_outcome: "blocked",
+      normalized_outcome: "needs-decision",
+      synthesized_question: normalized.question,
+    },
+  };
+}
 
 export function validateIterationResult(value: unknown): string[] {
   if (!validateSchema(value)) {

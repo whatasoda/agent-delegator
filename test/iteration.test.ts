@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   iterationAsImplementationResult,
+  normalizeIterationResult,
   type IterationResult,
   validateIterationResult,
 } from "../src/iteration.js";
@@ -39,5 +40,24 @@ describe("iteration result", () => {
     expect(validateIterationResult({ ...converged, outcome: "blocked" })).toContain(
       "Iteration result /question must be non-empty when outcome is blocked",
     );
+  });
+
+  test("normalizes a blocked outcome without losing verification details", () => {
+    const blocked: IterationResult = {
+      ...converged,
+      outcome: "blocked",
+      verification: [{
+        command: "bun run typecheck",
+        status: "environment_blocked",
+        details: "Dependencies are unavailable in the sandbox",
+      }],
+    };
+    const normalized = normalizeIterationResult(blocked);
+    expect(normalized.value).toMatchObject({
+      outcome: "needs-decision",
+      question: "The Brief is satisfied.",
+      verification: [{ status: "environment_blocked" }],
+    });
+    expect(validateIterationResult(normalized.value)).toEqual([]);
   });
 });

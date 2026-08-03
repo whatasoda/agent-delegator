@@ -14,6 +14,7 @@ import {
   repairBriefCitationTurns,
   renderBrief,
   delegatedActionPolicyWarning,
+  normalizeBriefDraft,
   type BriefDraft,
   type BriefEvidenceSource,
   validateBrief,
@@ -62,11 +63,16 @@ import {
 import { type ResearchResult, validateResearchResult } from "./research.js";
 import {
   iterationAsImplementationResult,
+  normalizeIterationResult,
   type IterationResult,
   validateIterationResult,
 } from "./iteration.js";
 import { gitValue, repositoryRoot, worktreeFingerprint, worktreeObservation } from "./repository.js";
-import { type ImplementationResult, validateImplementationResult } from "./result.js";
+import {
+  type ImplementationResult,
+  normalizeImplementationResult,
+  validateImplementationResult,
+} from "./result.js";
 import { type VerificationResult, validateVerificationResult } from "./verification.js";
 import {
   headlessJobDirectory,
@@ -975,6 +981,15 @@ function recordObservedCheckpoint(
   state.latestCheckpointPath = checkpoint.path;
 }
 
+function failureWithAppliedWorktree(
+  failure: string,
+  checkpoint: Awaited<ReturnType<typeof captureCheckpointTolerantly>>,
+): string {
+  if (checkpoint.error !== null || checkpoint.changedFileCount === 0) return failure;
+  const fileLabel = checkpoint.changedFileCount === 1 ? "file" : "files";
+  return `${failure}; ${checkpoint.changedFileCount} changed ${fileLabel} and ${checkpoint.patchBytes} patch bytes are already applied to the worktree; recovery checkpoint saved at ${checkpoint.path}; review the applied changes and raw result before choosing the next action`;
+}
+
 // A checkpoint-capture failure after Codex already finished must not convert a valid result into a
 // failed run; the stale fingerprint keeps the worktree gate conservative until the drift is reviewed.
 async function captureCheckpointTolerantly(
@@ -1206,8 +1221,12 @@ function taskMetadataFromArgs(args: string[]): TaskMetadata {
   const complexity = option(args, "--complexity") ?? "unknown";
   const taskTypes = ["feature", "bugfix", "refactor", "test", "documentation", "tooling", "migration", "performance", "security", "investigation", "other"];
   const complexities = ["small", "medium", "large", "unknown"];
-  if (!taskTypes.includes(taskType)) throw new Error(`Unknown --task-type: ${taskType}`);
-  if (!complexities.includes(complexity)) throw new Error(`Unknown --complexity: ${complexity}`);
+  if (!taskTypes.includes(taskType)) {
+    throw new Error(`Unknown --task-type: ${taskType}. Allowed values: ${taskTypes.join(", ")}`);
+  }
+  if (!complexities.includes(complexity)) {
+    throw new Error(`Unknown --complexity: ${complexity}. Allowed values: ${complexities.join(", ")}`);
+  }
   const tags = (option(args, "--tags") ?? "").split(",").map((tag) => tag.trim()).filter(Boolean);
   if (tags.length > 32 || tags.some((tag) => tag.length > 64 || /[\u0000-\u001f\u007f]/.test(tag))) {
     throw new Error("--tags accepts at most 32 comma-separated tags of 1-64 characters without controls");
@@ -1835,7 +1854,7 @@ async function commandCompile(args: string[]): Promise<void> {
       throw new Error(codexFailureMessage("Brief compiler", codexResult, `${attemptPrefix}/stderr.log`));
     }
     await chmod(generatedPath, 0o600);
-    const brief = await readJson<unknown>(generatedPath);
+    const brief = normalizeBriefDraft(await readJson<unknown>(generatedPath));
     const errors = validateBrief(brief);
     if (errors.length > 0) throw new Error(`Generated brief failed validation: ${errors.join("; ")}`);
     const evidenceBundle = await readJson<EvidenceBundle>(join(runDir, "evidence-bundle.json"));
@@ -1958,7 +1977,7 @@ async function commandRevalidate(args: string[]): Promise<void> {
       }
       await writeJson(briefPath, await readJson<unknown>(generatedPath));
     }
-    const brief = await readJson<unknown>(briefPath);
+    const brief = normalizeBriefDraft(await readJson<unknown>(briefPath));
     const errors = validateBrief(brief);
     if (errors.length > 0) throw new Error(`Brief validation failed: ${errors.join("; ")}`);
     const evidenceBundle = await readJson<EvidenceBundle>(join(runDir, "evidence-bundle.json"));
@@ -2025,10 +2044,11 @@ async function commandApprove(args: string[]): Promise<void> {
   try {
     const briefPath = join(runDir, "brief.json");
     await verifyCollectionAnchor(runDir, state);
-    const brief = await readJson<unknown>(briefPath);
+    const brief = normalizeBriefDraft(await readJson<unknown>(briefPath));
     const errors = validateBrief(brief);
     if (errors.length > 0) throw new Error(`Brief validation failed: ${errors.join("; ")}`);
     const validatedBrief = brief as BriefDraft;
+    await writeJson(briefPath, validatedBrief);
     const canonicalMarkdown = renderBrief(validatedBrief);
     const renderedBriefPath = join(runDir, "brief.md");
     if (await exists(renderedBriefPath) && await readFile(renderedBriefPath, "utf8") !== canonicalMarkdown) {
@@ -2141,6 +2161,7 @@ async function commandImplement(
   const implementAttemptDir = attemptDirectory(runDir, "implement", attempt);
   const promptPath = join(implementAttemptDir, "prompt.md");
   const generatedResultPath = join(implementAttemptDir, "result.json");
+  const normalizationPath = join(implementAttemptDir, "result-normalization.json");
   const implementStartedAt = Date.now();
   const attemptPrefix = `attempts/implement/${String(attempt).padStart(3, "0")}`;
   await writeAttemptMetadata(implementAttemptDir, "implement", attempt);
@@ -2177,6 +2198,7 @@ async function commandImplement(
     artifacts: [`${attemptPrefix}/attempt-metadata.json`, `${attemptPrefix}/prompt.md`],
   });
   let codexResult: Awaited<ReturnType<typeof runCodex>> | null = null;
+  let normalizationRecorded = false;
   try {
     codexResult = await runCodex(codexArgsForState(codexArgs, state, sandboxPolicy), {
       cwd: state.repoRoot,
@@ -2193,9 +2215,18 @@ async function commandImplement(
     }
     await chmod(generatedResultPath, 0o600);
     const payload = await readJson<unknown>(generatedResultPath);
-    const errors = validateImplementationResult(payload);
+    const normalized = normalizeImplementationResult(payload);
+    if (normalized.normalization) {
+      await writeJson(normalizationPath, {
+        schema_version: "1",
+        normalized_at: new Date().toISOString(),
+        ...normalized.normalization,
+      });
+      normalizationRecorded = true;
+    }
+    const errors = validateImplementationResult(normalized.value);
     if (errors.length) throw new Error(`Implementer result failed validation: ${errors.join("; ")}`);
-    const validated = payload as ImplementationResult;
+    const validated = normalized.value as ImplementationResult;
     if ((validated.status === "needs-decision" || validated.status === "blocked") && !state.implementationSessionId) {
       throw new Error(`${validated.status} result cannot be resumed because Codex returned no thread ID`);
     }
@@ -2232,6 +2263,7 @@ async function commandImplement(
           ? { changed_file_count: checkpoint.changedFileCount, patch_bytes: checkpoint.patchBytes }
           : {}),
         codex_invoked: true, exit_code: codexResult.exitCode,
+        result_normalization_count: normalizationRecorded ? 1 : 0,
         controller_commit_mode: state.controllerCommitMode ?? "never",
         controller_commit_created: controllerCommit !== null,
         ...(controllerCommit ? { controller_commit_sha: controllerCommit.sha } : {}),
@@ -2239,6 +2271,7 @@ async function commandImplement(
       artifacts: [
         `${attemptPrefix}/attempt-metadata.json`,
         `${attemptPrefix}/result.json`,
+        ...(normalizationRecorded ? [`${attemptPrefix}/result-normalization.json`] : []),
         ...(checkpoint.error === null
           ? [`${attemptPrefix}/checkpoint.json`, `${attemptPrefix}/worktree.patch`]
           : []),
@@ -2268,9 +2301,7 @@ async function commandImplement(
     recordObservedCheckpoint(state, checkpoint);
     const originalFailure = error instanceof Error ? error.message : String(error);
     state.status = "failed";
-    state.failure = checkpoint.error === null && checkpoint.changedFileCount > 0
-      ? `${originalFailure}; partial worktree checkpoint saved at ${checkpoint.path}; inspect it before retrying`
-      : originalFailure;
+    state.failure = failureWithAppliedWorktree(originalFailure, checkpoint);
     state.failurePhase = "implement";
     state.activeOperation = null;
     state.controllerPid = null;
@@ -2284,6 +2315,7 @@ async function commandImplement(
           ? { changed_file_count: checkpoint.changedFileCount, patch_bytes: checkpoint.patchBytes }
           : {}),
         codex_invoked: true,
+        result_normalization_count: normalizationRecorded ? 1 : 0,
         controller_commit_mode: state.controllerCommitMode ?? "never",
         ...(codexResult ? { exit_code: codexResult.exitCode } : {}),
       },
@@ -2292,6 +2324,7 @@ async function commandImplement(
         `${attemptPrefix}/events.jsonl`,
         `${attemptPrefix}/stderr.log`,
         ...(await exists(generatedResultPath) ? [`${attemptPrefix}/result.json`] : []),
+        ...(normalizationRecorded ? [`${attemptPrefix}/result-normalization.json`] : []),
         ...(checkpoint.error === null
           ? [`${attemptPrefix}/checkpoint.json`, `${attemptPrefix}/worktree.patch`]
           : []),
@@ -2473,6 +2506,7 @@ async function executeIterationTurn(
   const model = option(args, "--model") ?? state.implementationModel ?? process.env.AGENT_DELEGATOR_IMPLEMENT_MODEL ?? null;
   const attemptDir = attemptDirectory(runDir, "iterate", turn);
   const resultPath = join(attemptDir, "result.json");
+  const normalizationPath = join(attemptDir, "result-normalization.json");
   const promptPath = join(attemptDir, "prompt.md");
   const attemptPrefix = `attempts/iterate/${String(turn).padStart(3, "0")}`;
   const startedAt = Date.now();
@@ -2506,6 +2540,7 @@ async function executeIterationTurn(
     artifacts: [`${attemptPrefix}/attempt-metadata.json`, `${attemptPrefix}/prompt.md`],
   });
   let codexResult: Awaited<ReturnType<typeof runCodex>> | null = null;
+  let normalizationRecorded = false;
   try {
     codexResult = await runCodex(
       codexArgsForState(codexArgs, state, executionPolicyForState(state, "implementation")), {
@@ -2523,9 +2558,18 @@ async function executeIterationTurn(
     }
     await chmod(resultPath, 0o600);
     const payload = await readJson<unknown>(resultPath);
-    const errors = validateIterationResult(payload);
+    const normalized = normalizeIterationResult(payload);
+    if (normalized.normalization) {
+      await writeJson(normalizationPath, {
+        schema_version: "1",
+        normalized_at: new Date().toISOString(),
+        ...normalized.normalization,
+      });
+      normalizationRecorded = true;
+    }
+    const errors = validateIterationResult(normalized.value);
     if (errors.length) throw new Error(`Iteration result failed validation: ${errors.join("; ")}`);
-    const validated = payload as IterationResult;
+    const validated = normalized.value as IterationResult;
     const canonicalResult = iterationAsImplementationResult(validated);
     const checkpoint = await captureCheckpointTolerantly(state.repoRoot, attemptDir);
     recordObservedCheckpoint(state, checkpoint);
@@ -2571,12 +2615,14 @@ async function executeIterationTurn(
           : {}),
         codex_invoked: true,
         exit_code: codexResult.exitCode,
+        result_normalization_count: normalizationRecorded ? 1 : 0,
         controller_commit_mode: state.controllerCommitMode ?? "never",
         controller_commit_created: controllerCommit !== null,
         ...(controllerCommit ? { controller_commit_sha: controllerCommit.sha } : {}),
       },
       artifacts: [
         `${attemptPrefix}/attempt-metadata.json`, `${attemptPrefix}/result.json`,
+        ...(normalizationRecorded ? [`${attemptPrefix}/result-normalization.json`] : []),
         ...(checkpoint.error === null
           ? [`${attemptPrefix}/checkpoint.json`, `${attemptPrefix}/worktree.patch`]
           : []),
@@ -2594,9 +2640,7 @@ async function executeIterationTurn(
     recordObservedCheckpoint(state, checkpoint);
     const originalFailure = error instanceof Error ? error.message : String(error);
     state.status = "failed";
-    state.failure = checkpoint.error === null && checkpoint.changedFileCount > 0
-      ? `${originalFailure}; partial worktree checkpoint saved at ${checkpoint.path}; inspect it before retrying`
-      : originalFailure;
+    state.failure = failureWithAppliedWorktree(originalFailure, checkpoint);
     state.failurePhase = "iterate";
     state.activeOperation = null;
     state.controllerPid = null;
@@ -2610,12 +2654,14 @@ async function executeIterationTurn(
           ? { changed_file_count: checkpoint.changedFileCount, patch_bytes: checkpoint.patchBytes }
           : {}),
         codex_invoked: true,
+        result_normalization_count: normalizationRecorded ? 1 : 0,
         controller_commit_mode: state.controllerCommitMode ?? "never",
         ...(codexResult ? { exit_code: codexResult.exitCode } : {}),
       },
       artifacts: [
         `${attemptPrefix}/attempt-metadata.json`, `${attemptPrefix}/events.jsonl`, `${attemptPrefix}/stderr.log`,
         ...(await exists(resultPath) ? [`${attemptPrefix}/result.json`] : []),
+        ...(normalizationRecorded ? [`${attemptPrefix}/result-normalization.json`] : []),
         ...(checkpoint.error === null
           ? [`${attemptPrefix}/checkpoint.json`, `${attemptPrefix}/worktree.patch`]
           : []),
@@ -2876,6 +2922,7 @@ async function commandResume(args: string[]): Promise<void> {
   const attempt = state.attempts.resume;
   const resumeAttemptDir = attemptDirectory(runDir, "resume", attempt);
   const resultPath = join(resumeAttemptDir, "result.json");
+  const normalizationPath = join(resumeAttemptDir, "result-normalization.json");
   const resumeStartedAt = Date.now();
   const attemptPrefix = `attempts/resume/${String(attempt).padStart(3, "0")}`;
   await writeAttemptMetadata(resumeAttemptDir, "resume", attempt);
@@ -2937,6 +2984,7 @@ Continue the already approved implementation and return the structured result.`;
     artifacts: [`${attemptPrefix}/attempt-metadata.json`, `${attemptPrefix}/addendum.md`],
   });
   let codexResult: Awaited<ReturnType<typeof runCodex>> | null = null;
+  let normalizationRecorded = false;
   try {
     codexResult = await runCodex(codexArgsForState(codexArgs, state, sandboxPolicy), {
       cwd: state.repoRoot,
@@ -2953,9 +3001,18 @@ Continue the already approved implementation and return the structured result.`;
     }
     await chmod(resultPath, 0o600);
     const payload = await readJson<unknown>(resultPath);
-    const errors = validateImplementationResult(payload);
+    const normalized = normalizeImplementationResult(payload);
+    if (normalized.normalization) {
+      await writeJson(normalizationPath, {
+        schema_version: "1",
+        normalized_at: new Date().toISOString(),
+        ...normalized.normalization,
+      });
+      normalizationRecorded = true;
+    }
+    const errors = validateImplementationResult(normalized.value);
     if (errors.length) throw new Error(`Resumed implementer result failed validation: ${errors.join("; ")}`);
-    const validated = payload as ImplementationResult;
+    const validated = normalized.value as ImplementationResult;
     const checkpoint = await captureCheckpointTolerantly(state.repoRoot, resumeAttemptDir);
     recordObservedCheckpoint(state, checkpoint);
     if (await gitValue(state.repoRoot, "rev-parse", "HEAD") !== executionHead) {
@@ -2989,6 +3046,7 @@ Continue the already approved implementation and return the structured result.`;
           ? { changed_file_count: checkpoint.changedFileCount, patch_bytes: checkpoint.patchBytes }
           : {}),
         codex_invoked: true, exit_code: codexResult.exitCode,
+        result_normalization_count: normalizationRecorded ? 1 : 0,
         controller_commit_mode: state.controllerCommitMode ?? "never",
         controller_commit_created: controllerCommit !== null,
         ...(controllerCommit ? { controller_commit_sha: controllerCommit.sha } : {}),
@@ -2996,6 +3054,7 @@ Continue the already approved implementation and return the structured result.`;
       artifacts: [
         `${attemptPrefix}/attempt-metadata.json`,
         `${attemptPrefix}/result.json`,
+        ...(normalizationRecorded ? [`${attemptPrefix}/result-normalization.json`] : []),
         ...(checkpoint.error === null
           ? [`${attemptPrefix}/checkpoint.json`, `${attemptPrefix}/worktree.patch`]
           : []),
@@ -3022,9 +3081,7 @@ Continue the already approved implementation and return the structured result.`;
     recordObservedCheckpoint(state, checkpoint);
     const originalFailure = error instanceof Error ? error.message : String(error);
     state.status = "failed";
-    state.failure = checkpoint.error === null && checkpoint.changedFileCount > 0
-      ? `${originalFailure}; partial worktree checkpoint saved at ${checkpoint.path}; inspect it before retrying`
-      : originalFailure;
+    state.failure = failureWithAppliedWorktree(originalFailure, checkpoint);
     state.failurePhase = "resume";
     state.activeOperation = null;
     state.controllerPid = null;
@@ -3038,6 +3095,7 @@ Continue the already approved implementation and return the structured result.`;
           ? { changed_file_count: checkpoint.changedFileCount, patch_bytes: checkpoint.patchBytes }
           : {}),
         codex_invoked: true,
+        result_normalization_count: normalizationRecorded ? 1 : 0,
         controller_commit_mode: state.controllerCommitMode ?? "never",
         ...(codexResult ? { exit_code: codexResult.exitCode } : {}),
       },
@@ -3046,6 +3104,7 @@ Continue the already approved implementation and return the structured result.`;
         `${attemptPrefix}/events.jsonl`,
         `${attemptPrefix}/stderr.log`,
         ...(await exists(resultPath) ? [`${attemptPrefix}/result.json`] : []),
+        ...(normalizationRecorded ? [`${attemptPrefix}/result-normalization.json`] : []),
         ...(checkpoint.error === null
           ? [`${attemptPrefix}/checkpoint.json`, `${attemptPrefix}/worktree.patch`]
           : []),
@@ -3252,10 +3311,10 @@ async function recoverInterruptedRun(runDir: string, state: RunState, forced: bo
   state.status = "failed";
   state.failurePhase = interruptedOperation;
   const interruptionFailure = forced
-    ? `The ${interruptedOperation} operation was force-failed by the operator; verify no Codex process is still running and inspect the worktree before retrying.`
-    : `The ${interruptedOperation} controller process is no longer running; inspect artifacts before retrying.`;
+    ? `The ${interruptedOperation} operation was force-failed by the operator; verify no Codex process is still running and inspect the worktree before choosing the next action.`
+    : `The ${interruptedOperation} controller process is no longer running; inspect artifacts before choosing the next action.`;
   state.failure = checkpoint?.error === null && checkpoint.changedFileCount > 0
-    ? `${interruptionFailure} Partial worktree checkpoint saved at ${checkpoint.path}.`
+    ? failureWithAppliedWorktree(interruptionFailure, checkpoint)
     : checkpoint?.error
       ? `${interruptionFailure} Checkpoint capture also failed: ${checkpoint.error}.`
       : interruptionFailure;
@@ -3891,7 +3950,7 @@ Common options:
   --max-turns <n>           Maximum autonomous improvement turns (default 3)
   --max-minutes <n>         Autonomous loop wall-time budget after initial implementation (default 180)
   --runs-dir <dir>          Override <repo>/.agent-delegator/runs
-  --task-type <type>        Classify a run for comparison (feature, bugfix, tooling, ...)
+  --task-type <type>        feature, bugfix, refactor, test, documentation, tooling, migration, performance, security, investigation, or other
   --complexity <size>       Classify a run as small, medium, large, or unknown
   --tags <a,b>              Add comma-separated project-specific observation tags
   --variant <label>         Label an experimental workflow variant for later comparison

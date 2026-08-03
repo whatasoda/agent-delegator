@@ -18,6 +18,10 @@ Rules:
    turn for a transcript citation and to `null` for a repository-file citation. Every MUST
    constraint needs collected evidence and a causal rationale. If evidence is absent, record the
    issue as unresolved instead of inventing it.
+   For every compiler-produced decision set `provenance` to `evidence` and both
+   `owner_decision_by` and `owner_decision_at` to `null`. Only the owner may change a decision to
+   `post_compile_owner_decision` after compilation, with an empty `sources` array, a non-empty
+   owner identity, and the decision timestamp.
 5. Preserve the difference between project requirements and suggested implementation details.
 6. Include rejected alternatives when they explain why an attractive implementation is wrong.
 7. Quotes in sources must be short, byte-for-byte substrings from the cited snapshot (and cited

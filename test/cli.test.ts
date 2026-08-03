@@ -118,6 +118,9 @@ const brief = process.env.FAKE_CODEX_INVALID_BRIEF === "1" ? {} : {
     statement: "Ask for exact wording before editing",
     status: "accepted",
     rationale: "The wording is a product decision",
+    provenance: "evidence",
+    owner_decision_by: null,
+    owner_decision_at: null,
     sources: [{ source_id: citationSourceId, turn: citationTurn, quote: "must wait for the exact greeting wording" }]
   }],
   constraints: [{
@@ -138,15 +141,18 @@ const brief = process.env.FAKE_CODEX_INVALID_BRIEF === "1" ? {} : {
     sources: [{ source_id: citationSourceId, turn: citationTurn, quote: "must wait for the exact greeting wording" }]
   }]
 };
+const blockedWithoutQuestion = process.env.FAKE_CODEX_BLOCKED_EMPTY_QUESTION === "1";
 const result = process.env.FAKE_CODEX_INVALID_RESULT === "1" ? { status: "completed" } : {
-  status: isResume || process.env.FAKE_CODEX_IMPLEMENT_COMPLETED === "1" ? "completed" : "needs-decision",
-  summary: isResume || process.env.FAKE_CODEX_IMPLEMENT_COMPLETED === "1" ? "Applied the supplied decision" : "Waiting for wording",
+  status: blockedWithoutQuestion ? "blocked" : isResume || process.env.FAKE_CODEX_IMPLEMENT_COMPLETED === "1" ? "completed" : "needs-decision",
+  summary: blockedWithoutQuestion ? "Implementation is applied but verification needs owner review" : isResume || process.env.FAKE_CODEX_IMPLEMENT_COMPLETED === "1" ? "Applied the supplied decision" : "Waiting for wording",
   changed_files: [],
   implementation_decisions: [],
   brief_deviations: [],
-  verification: [],
-  remaining_risks: [],
-  question: isResume || process.env.FAKE_CODEX_IMPLEMENT_COMPLETED === "1" ? "" : "What exact greeting should be used?",
+  verification: process.env.FAKE_CODEX_ENVIRONMENT_BLOCKED === "1"
+    ? [{ command: "bun run test", status: "environment_blocked", details: "Sandbox port binding denied" }]
+    : [],
+  remaining_risks: process.env.FAKE_CODEX_ENVIRONMENT_BLOCKED === "1" ? ["Owner must rerun bun run test"] : [],
+  question: blockedWithoutQuestion || isResume || process.env.FAKE_CODEX_IMPLEMENT_COMPLETED === "1" ? "" : "What exact greeting should be used?",
   commit_message: process.env.FAKE_CODEX_COMMIT_MESSAGE ?? ""
 };
 const research = process.env.FAKE_CODEX_INVALID_RESEARCH === "1" ? { status: "answered" } : {
@@ -1364,14 +1370,26 @@ describe("agent-delegator CLI", () => {
     const briefPath = join(runs, "revalidate", "brief.json");
     const brief = JSON.parse(await readFile(briefPath, "utf8"));
     brief.constraints[0].sources[0].quote = "must wait for the exact greeting wording";
+    brief.decisions.push({
+      statement: "Use Hello as the greeting",
+      status: "accepted",
+      rationale: "The owner resolved the compiler question after compilation",
+      provenance: "post_compile_owner_decision",
+      owner_decision_by: "fixture-owner",
+      owner_decision_at: "2026-08-03T12:34:56Z",
+      sources: [],
+    });
+    brief.unresolved_items = [];
     await writeFile(briefPath, JSON.stringify(brief, null, 2));
 
     const revalidated = await run(["revalidate", "--run", "revalidate", "--runs-dir", runs], repo, env);
     expect(revalidated.exitCode).toBe(0);
     expect(JSON.parse(revalidated.stdout).status).toBe("compiled");
+    expect(await readFile(join(runs, "revalidate", "brief.md"), "utf8"))
+      .toContain("Owner decision: fixture-owner at 2026-08-03T12:34:56Z");
 
     const approved = await run(
-      ["approve", "--run", "revalidate", "--runs-dir", runs, "--allow-unresolved"],
+      ["approve", "--run", "revalidate", "--runs-dir", runs],
       repo,
       env,
     );
@@ -1986,7 +2004,7 @@ describe("agent-delegator CLI", () => {
   });
 
   test("supports --help and --version and names a missing run clearly", async () => {
-    const { repo, runs, env } = await fixture();
+    const { repo, runs, transcript, env, log } = await fixture();
 
     const version = await run(["--version"], repo, env);
     expect(version.exitCode).toBe(0);
@@ -1995,6 +2013,21 @@ describe("agent-delegator CLI", () => {
     const help = await run(["compile", "--help"], repo, env);
     expect(help.exitCode).toBe(0);
     expect(help.stdout).toContain("Usage:");
+    expect(help.stdout).toContain("feature, bugfix, refactor, test, documentation, tooling, migration, performance, security, investigation, or other");
+
+    const invalidTaskType = await run(
+      [
+        "compile", "--objective=Classify", "--task-type=implementation", "--transcript", transcript,
+        "--runs-dir", runs,
+      ],
+      repo,
+      env,
+    );
+    expect(invalidTaskType.exitCode).toBe(1);
+    expect(invalidTaskType.stderr).toContain(
+      "Allowed values: feature, bugfix, refactor, test, documentation, tooling, migration, performance, security, investigation, other",
+    );
+    await expect(readFile(log, "utf8")).rejects.toThrow();
 
     const missing = await run(["status", "--run", "no-such-run", "--runs-dir", runs], repo, env);
     expect(missing.exitCode).toBe(1);
@@ -2359,6 +2392,62 @@ describe("agent-delegator CLI", () => {
     expect(JSON.parse(retried.stdout).attempt).toBe(2);
   });
 
+  test("keeps completed implementations completed when local verification is environment-blocked", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    await run(
+      ["compile", "--objective=Environment-blocked checks", "--transcript", transcript, "--runs-dir", runs, "--run-id", "environment-blocked"],
+      repo,
+      env,
+    );
+    await run(["approve", "--allow-unresolved", "--run", "environment-blocked", "--runs-dir", runs], repo, env);
+    const implementation = await run(
+      ["implement", "--run", "environment-blocked", "--runs-dir", runs],
+      repo,
+      { ...env, FAKE_CODEX_IMPLEMENT_COMPLETED: "1", FAKE_CODEX_ENVIRONMENT_BLOCKED: "1" },
+    );
+
+    expect(implementation.exitCode).toBe(0);
+    expect(JSON.parse(implementation.stdout).status).toBe("completed");
+    const result = JSON.parse(await readFile(join(runs, "environment-blocked", "result.json"), "utf8"));
+    expect(result.verification).toEqual([expect.objectContaining({ status: "environment_blocked" })]);
+  });
+
+  test("records and surfaces a blocked result with an empty question instead of discarding it", async () => {
+    const { repo, runs, transcript, env } = await fixture();
+    await run(
+      ["compile", "--objective=Normalize blocked report", "--transcript", transcript, "--runs-dir", runs, "--run-id", "normalize-blocked"],
+      repo,
+      env,
+    );
+    await run(["approve", "--allow-unresolved", "--run", "normalize-blocked", "--runs-dir", runs], repo, env);
+    const implementation = await run(
+      ["implement", "--run", "normalize-blocked", "--runs-dir", runs],
+      repo,
+      { ...env, FAKE_CODEX_BLOCKED_EMPTY_QUESTION: "1" },
+    );
+
+    expect(implementation.exitCode).toBe(0);
+    expect(JSON.parse(implementation.stdout).status).toBe("needs-decision");
+    const runDir = join(runs, "normalize-blocked");
+    const raw = JSON.parse(await readFile(join(runDir, "attempts", "implement", "001", "result.json"), "utf8"));
+    const canonical = JSON.parse(await readFile(join(runDir, "result.json"), "utf8"));
+    const normalization = JSON.parse(
+      await readFile(join(runDir, "attempts", "implement", "001", "result-normalization.json"), "utf8"),
+    );
+    expect(raw).toMatchObject({ status: "blocked", question: "" });
+    expect(canonical).toMatchObject({
+      status: "needs-decision",
+      question: "Implementation is applied but verification needs owner review",
+    });
+    expect(normalization).toMatchObject({
+      code: "blocked_missing_question",
+      original_status: "blocked",
+      normalized_status: "needs-decision",
+    });
+    expect(await readFile(join(runDir, "run-events.jsonl"), "utf8"))
+      .toContain('"result_normalization_count":1');
+  });
+
   test("rejects a resumable result without a Codex thread id", async () => {
     const { repo, runs, transcript, env } = await fixture();
     await run(
@@ -2422,7 +2511,8 @@ describe("agent-delegator CLI", () => {
       observedWorktreeChangedFileCount: 1,
     });
     expect(JSON.parse(recovered.stdout).observedWorktreeSha256).not.toBe(approvedFingerprint);
-    expect(JSON.parse(recovered.stdout).failure).toContain("Partial worktree checkpoint saved");
+    expect(JSON.parse(recovered.stdout).failure).toContain("1 changed file and");
+    expect(JSON.parse(recovered.stdout).failure).toContain("patch bytes are already applied to the worktree");
     expect(await readFile(
       join(runs, "stale-write", "attempts", "implement", "001", "worktree.patch"),
       "utf8",
@@ -2502,7 +2592,9 @@ describe("agent-delegator CLI", () => {
     );
     expect(timedOut.exitCode).toBe(1);
     expect(timedOut.stderr).toContain("exceeded the 1000ms timeout");
-    expect(timedOut.stderr).toContain("partial worktree checkpoint saved");
+    expect(timedOut.stderr).toContain("1 changed file and");
+    expect(timedOut.stderr).toContain("patch bytes are already applied to the worktree");
+    expect(timedOut.stderr).not.toContain("partial worktree checkpoint");
     const failedState = JSON.parse(await readFile(statePath, "utf8"));
     expect(failedState).toMatchObject({
       status: "failed",

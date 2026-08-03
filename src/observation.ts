@@ -43,6 +43,7 @@ export interface RunEvent {
     citation_count?: number;
     citation_source_correction_count?: number;
     citation_turn_correction_count?: number;
+    result_normalization_count?: number;
     changed_file_count?: number;
     patch_bytes?: number;
     codex_invoked?: boolean;
